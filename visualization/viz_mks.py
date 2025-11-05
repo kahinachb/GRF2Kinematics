@@ -6,12 +6,12 @@ import pandas as pd
 import numpy as np
 import time
 import meshcat
-from utils import read_mks_data
-from viz_utils import add_sphere, place
-from model_utils import *
+from utils.utils import read_mks_data
+from utils.viz_utils import add_sphere, place
+from utils.model_utils import *
 
 # === Load data ===
-df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/Human_data/Vincent/Trial109_mks.csv")
+df = pd.read_csv("DATA/Vincent/Trial109.csv")
 
 
 mks_dict, start_sample_dict = read_mks_data(df, start_sample=0, converter=1000.0)

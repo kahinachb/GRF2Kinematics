@@ -1,6 +1,6 @@
-/checkpoints
 /DATA
 /motif
 /processed_data
 /scalers__pycache__/
 *.pyc
+/info.txt

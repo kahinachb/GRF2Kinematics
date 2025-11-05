@@ -1,5 +1,5 @@
 import numpy as np
-from linear_algebra_utils import *
+from utils.linear_algebra_utils import *
 
 def get_thighR_pose(mks_positions, knee_offset,gender='male',):
     """

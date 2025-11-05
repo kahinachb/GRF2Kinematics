@@ -1,5 +1,5 @@
-from model_utils import *
-from utils import read_mks_data
+from utils.model_utils import *
+from utils.utils import read_mks_data
 import pandas as pd
 # === Load data ===
 df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/Human_data/Vincent/Trial109_mks.csv")

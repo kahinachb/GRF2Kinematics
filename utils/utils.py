@@ -2,7 +2,7 @@ import os
 from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 import pandas as pd
-from linear_algebra_utils import col_vector_3D, transform_to_global_frame,transform_to_local_frame
+from utils.linear_algebra_utils import col_vector_3D, transform_to_global_frame,transform_to_local_frame
 import yaml
 
 def to_utc(s: pd.Series) -> pd.Series:

@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import time
 import meshcat
-from utils import read_mks_data
-from viz_utils import add_sphere, place,set_tf
-from model_utils import *
+from utils.utils import read_mks_data
+from utils.viz_utils import add_sphere, place,set_tf
+from utils.model_utils import *
 import meshcat_shapes
 # === Paths ===
 trial = "Trial109"

@@ -9,9 +9,9 @@ import meshcat_shapes
 # === Import local utils ===
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
-from utils import read_mks_data
-from viz_utils import add_sphere, place, set_tf
-from model_utils import (
+from utils.utils import read_mks_data
+from utils.viz_utils import add_sphere, place, set_tf
+from utils.model_utils import (
     get_pelvis_pose, get_thighR_pose, get_thighL_pose,
     knee_joint_center, ankle_joint_center, medial_from_ajc, as_col, create_virtual_foot_marker,create_virtual_MTOE
 )
