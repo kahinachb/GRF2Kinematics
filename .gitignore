@@ -2,4 +2,5 @@
 /DATA
 /motif
 /processed_data
-/scalers
+/scalers__pycache__/
+*.pyc
