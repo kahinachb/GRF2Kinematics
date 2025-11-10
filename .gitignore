@@ -1,6 +1,8 @@
 /DATA
 /motif
 /processed_data
-/scalers__pycache__/
+/__pycache__/
 *.pyc
 /info.txt
+/checkpoints*
+/scalers*
