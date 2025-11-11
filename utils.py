@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
+import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -215,8 +216,51 @@ def build_loaders_shared(
         train_ds, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, pin_memory=True
     )
+
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=True
     )
     return train_ds, val_ds, train_loader, val_loader, Fd, Jd, train_subs, test_subs
+
+
+def visualize_collected(collected, max_joints=12, save_dir=None, prefix="val_epoch", epoch=1):
+    """
+    Pour chaque batch collecté:
+      - on trace pour 1..K séquences (samples_per_batch) et pour min(J, max_joints) joints
+      - colonnes: [GT, Noisy, True noise, Pred noise, x0 reconstruit]
+    Si save_dir est donné, on sauvegarde les figures; sinon on fait plt.show().
+    """
+    for item in collected:
+        gt         = item["gt"]          # [S, L, J]
+        noisy      = item["noisy"]
+        true_noise = item["true_noise"]
+        pred_noise = item["pred_noise"]
+        x0_pred    = item["x0_pred"]
+        timesteps  = item["timesteps"]   # len S
+        bidx       = item["batch_idx"]
+
+        S, L, J = gt.shape
+        Jvis = min(J, max_joints)
+
+        for s in range(S):
+            fig, axes = plt.subplots(Jvis, 5, figsize=(18, 2.4*Jvis))
+            if Jvis == 1:
+                axes = axes.reshape(1, 5)  # sécurité si Jvis=1
+
+            for j in range(Jvis):
+                axes[j, 0].plot(gt[s, :, j]);         axes[j, 0].set_title(f"GT (t={timesteps[s]})", fontsize=9)
+                axes[j, 1].plot(noisy[s, :, j]);      axes[j, 1].set_title("Noisy", fontsize=9)
+                axes[j, 2].plot(true_noise[s, :, j]); axes[j, 2].set_title("True noise", fontsize=9)
+                axes[j, 3].plot(pred_noise[s, :, j]); axes[j, 3].set_title("Pred noise", fontsize=9)
+                axes[j, 4].plot(x0_pred[s, :, j]);    axes[j, 4].set_title("x0 reconstruit", fontsize=9)
+                for c in range(5):
+                    axes[j, c].grid(True)
+
+            plt.tight_layout()
+            if save_dir is None:
+                plt.show()
+            else:
+                out = f"{save_dir}/{prefix}_e{epoch:03d}_batch{bidx:04d}_sample{s:02d}.png"
+                plt.savefig(out, dpi=130)
+                plt.close(fig)

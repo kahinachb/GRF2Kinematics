@@ -19,22 +19,8 @@ import matplotlib.pyplot as plt
 
 from train_lstm import ForcesTojointsLSTM
 from utils import slice_trial_into_sequences
+from inference_utils import *
 
-# --------------------------
-# Pretty names (optional)
-# --------------------------
-JOINT_NAMES = [
-    'Left Hip Z', 'Left Hip X', 'Left Hip Y',
-    'Left Knee Z', 'Left Ankle Z', 'Left Ankle X',
-    'Right Hip Z', 'Right Hip X', 'Right Hip Y',
-    'Right Knee Z', 'Right Ankle Z', 'Right Ankle X'
-]
-FORCE_NAMES = [
-    'Left Fx', 'Left Fy', 'Left Fz',
-    'Left Mx', 'Left My', 'Left Mz',
-    'Right Fx', 'Right Fy', 'Right Fz',
-    'Right Mx', 'Right My', 'Right Mz'
-]
 
 
 # ==========================
@@ -67,12 +53,13 @@ class LSTMInference:
 
         # Retrieve hparams from checkpoint (stored in training)
         hp = ckpt.get('model_hparams', {})
+        print(hp)
         # Backward-compatible defaults
-        hp.setdefault('input_size', 12)
-        hp.setdefault('hidden_size', 128)
-        hp.setdefault('output_size', 12)
-        hp.setdefault('num_layers', 2)
-        hp.setdefault('dropout', 0.0)
+        # hp.setdefault('input_size', 12)
+        # hp.setdefault('hidden_size', 128)
+        # hp.setdefault('output_size', 12)
+        # hp.setdefault('num_layers', 2)
+        # hp.setdefault('dropout', 0.2)
         hp.setdefault('bidirectional', False)  # if you added this flag later
 
         model = ForcesTojointsLSTM(**hp)
@@ -120,92 +107,6 @@ class LSTMInference:
         yt = self.model(xt)                                    # [1, L, J]
         y_last = yt[:, -1, :].squeeze(0).cpu().numpy()         # [J]
         return y_last
-
-    # --------- evaluation ----------
-    @staticmethod
-    def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, np.ndarray]:
-        """
-        Shapes:
-            y_true: [T, J], y_pred: [T, J]
-        Returns dict with overall MSE/RMSE/MAE and per-joint metrics + correlation.
-        """
-        mse_per_joint = ((y_true - y_pred) ** 2).mean(axis=0)
-        rmse_per_joint = np.sqrt(mse_per_joint)
-        mae_per_joint = np.abs(y_true - y_pred).mean(axis=0)
-
-        overall_mse = mse_per_joint.mean()
-        overall_rmse = np.sqrt(overall_mse)
-        overall_mae = mae_per_joint.mean()
-
-        corrs = []
-        for j in range(y_true.shape[1]):
-            if np.std(y_true[:, j]) < 1e-8 or np.std(y_pred[:, j]) < 1e-8:
-                corrs.append(0.0)
-            else:
-                c = np.corrcoef(y_true[:, j], y_pred[:, j])[0, 1]
-                corrs.append(float(c) if np.isfinite(c) else 0.0)
-
-        return dict(
-            overall_mse=float(overall_mse),
-            overall_rmse=float(overall_rmse),
-            overall_mae=float(overall_mae),
-            mse_per_joint=mse_per_joint,
-            rmse_per_joint=rmse_per_joint,
-            mae_per_joint=mae_per_joint,
-            correlations=np.array(corrs, dtype=np.float32)
-        )
-
-    def print_metrics(self, metrics: Dict, degrees: bool = True):
-        print("\n" + "="*60)
-        print("EVALUATION METRICS")
-        print("="*60)
-        print(f"Overall (rad): MSE={metrics['overall_mse']:.6f} | RMSE={metrics['overall_rmse']:.6f} | MAE={metrics['overall_mae']:.6f}")
-
-        if degrees:
-            deg = 180/np.pi
-            print(f"Overall (deg): RMSE={metrics['overall_rmse']*deg:.3f} | MAE={metrics['overall_mae']*deg:.3f}")
-
-        print(f"\nPer-Joint Metrics:")
-        print(f"{'Joint':<20} {'RMSE(deg)':>12} {'MAE(deg)':>12} {'Corr':>10}")
-        print("-"*56)
-        deg = 180/np.pi
-        for i, name in enumerate(self.joint_names):
-            rmse_d = metrics['rmse_per_joint'][i] * deg
-            mae_d  = metrics['mae_per_joint'][i]  * deg
-            corr   = metrics['correlations'][i]
-            print(f"{name:<20} {rmse_d:>12.4f} {mae_d:>12.4f} {corr:>10.3f}")
-        print("="*60)
-
-    # --------- viz ----------
-    def plot_sequence(self, y_true: np.ndarray, y_pred: np.ndarray,
-                      title: str = "Force-to-Angle Prediction", in_degrees: bool = True):
-        """
-        Plot per-joint curves for one aligned sequence.
-        """
-        if in_degrees:
-            y_true = y_true * (180/np.pi)
-            y_pred = y_pred * (180/np.pi)
-            ylab = "Angle (deg)"
-        else:
-            ylab = "Angle (rad)"
-
-        T, J = y_true.shape
-        rows, cols = 4, 3
-        fig, axes = plt.subplots(rows, cols, figsize=(15, 12))
-        fig.suptitle(title, fontsize=16)
-
-        t = np.arange(T)
-        for j, (ax, name) in enumerate(zip(axes.flat, self.joint_names)):
-            ax.plot(t, y_true[:, j], label="True", alpha=0.7)
-            ax.plot(t, y_pred[:, j], label="Pred", alpha=0.7)
-            ax.set_title(name)
-            ax.set_xlabel("Time")
-            ax.set_ylabel(ylab)
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-
-        plt.tight_layout()
-        return fig
 
     # --------- end-to-end helpers ----------
     def run_sliding_last_step(self,
@@ -260,12 +161,12 @@ class LSTMInference:
 # ==========================
 def main():
     ap = argparse.ArgumentParser(description="Inference for LSTM/BiLSTM using shared utils")
-    ap.add_argument("--model_path", type=str, default="./checkpoints/best_model.pth")
+    ap.add_argument("--model_path", type=str, default="./checkpoints_lstm_local/best_model.pth")
     ap.add_argument("--data_dir", type=str, required=True)
     ap.add_argument("--subject", type=str, required=True)
     ap.add_argument("--trial", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--scaler_dir", type=str, default="./scalers_lstm")
+    ap.add_argument("--scaler_dir", type=str, default="./scalers_lstm_local")
     ap.add_argument("--normalize_forces", action="store_true", default=True)
 
     # How to infer
@@ -305,12 +206,12 @@ def main():
     print(f"Aligned arrays: y_true {y_true.shape} | y_pred {y_pred.shape}")
 
     # Metrics
-    metrics = LSTMInference.compute_metrics(y_true, y_pred)
-    infer.print_metrics(metrics, degrees=True)
+    metrics = compute_metrics(y_true, y_pred)
+    print_metrics(metrics, degrees=True)
 
     # Plot
     if args.plot and y_true.shape[0] > 0:
-        fig = infer.plot_sequence(y_true, y_pred, title=title, in_degrees=True)
+        fig = plot_sequence(y_true, y_pred, title=title, in_degrees=True)
         plt.show()
 
 
