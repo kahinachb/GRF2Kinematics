@@ -1,5 +1,77 @@
 import numpy as np
 from utils.linear_algebra_utils import *
+from pinocchio.robot_wrapper import RobotWrapper
+import pinocchio as pin
+
+class Robot(RobotWrapper):
+    """_Class to load a given urdf_
+
+    Args:
+        RobotWrapper (_type_): _description_
+    """
+
+    def __init__(self, robot_urdf, package_dirs, isFext=False, freeflyer_ori=None):
+        """_Init of the robot class. User can choose between floating base or not and to set the transformation matrix for this floating base._
+
+        Args:
+            robot_urdf (_str_): _path to the robot urdf_
+            package_dirs (_str_): _path to the meshes_
+            isFext (bool, optional): _Adds a floating base if set to True_. Defaults to False.
+            freeflyer_ori (_array_, optional): _Orientation of the floating base, given as a rotation matrix_. Defaults to None.
+        """
+
+        # intrinsic dynamic parameter names
+        self.params_name = (
+            "Ixx",
+            "Ixy",
+            "Ixz",
+            "Iyy",
+            "Iyz",
+            "Izz",
+            "mx",
+            "my",
+            "mz",
+            "m",
+        )
+
+        # defining conditions
+        self.isFext = isFext
+
+        # folder location
+        self.robot_urdf = robot_urdf
+
+        # initializing robot's models
+        if not isFext:
+            self.initFromURDF(robot_urdf, package_dirs=package_dirs)
+        else:
+            self.initFromURDF(
+                robot_urdf,
+                package_dirs=package_dirs,
+                root_joint=pin.JointModelFreeFlyer(),
+            )
+
+        if freeflyer_ori is not None and isFext:
+            self.model.jointPlacements[
+                self.model.getJointId("root_joint")
+            ].rotation = freeflyer_ori
+            ub = self.model.upperPositionLimit
+            ub[:7] = 1
+            self.model.upperPositionLimit = ub
+            lb = self.model.lowerPositionLimit
+            lb[:7] = -1
+            self.model.lowerPositionLimit = lb
+            self.data = self.model.createData()
+        # else:
+        #     self.model.upperPositionLimit = np.full(43, np.pi)
+        #     self.model.lowerPositionLimit = np.full(43, -np.pi)
+
+        ## \todo test that this is equivalent to reloading the model
+        self.geom_model = self.collision_model
+
+
+def build_human_model(urdf_path: str, urdf_meshes_path: str):
+    robot = Robot(urdf_path, urdf_meshes_path, isFext=True)
+    return robot.model, robot.collision_model, robot.visual_model, robot.data
 
 def get_thighR_pose(mks_positions, knee_offset,gender='male',):
     """

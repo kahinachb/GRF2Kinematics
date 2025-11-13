@@ -108,7 +108,7 @@ def plot_sequence(y_true: np.ndarray, y_pred: np.ndarray,
 
 
 def visualize_noise_and_prediction(noisy_trajectory, clean_trajectory, trajectory_steps, 
-                                   ground_truth, num_samples, num_joints, save_path):
+                                   ground_truth, num_samples, num_joints, save_path=None):
     """
     Visualize:
     - Top row: Noisy input x fed to the model
@@ -205,10 +205,201 @@ def visualize_noise_and_prediction(noisy_trajectory, clean_trajectory, trajector
                     '(Top: Noisy Input | Middle: Model Prediction | Bottom: Ground Truth)', 
                     fontsize=13, fontweight='bold')
         plt.tight_layout()
-        # plt.show()
+        plt.show()
         
         # Save with sample index
-        save_path_sample = save_path.replace('.png', f'_sample{sample_idx+1}.png')
-        plt.savefig(save_path_sample, dpi=150, bbox_inches='tight')
-        print(f"✓ Saved {save_path_sample}")
-        plt.close()
+        # save_path_sample = save_path.replace('.png', f'_sample{sample_idx+1}.png')
+        # plt.savefig(save_path_sample, dpi=150, bbox_inches='tight')
+        # print(f"✓ Saved {save_path_sample}")
+        # plt.close()
+
+def visualize_per_joint_timestep(noisy, predicted, ground_truth, t,
+                                 predicted_noise=None, joint_names=JOINT_NAMES, sample_idx=0, 
+                                 save_dir=None, show=True):
+    """
+    Visualize all joints for a given timestep during denoising.
+
+    Columns:
+      1 - Ground Truth
+      2 - Noisy Input
+      3 - Predicted Clean (x0)
+      4 - Predicted Noise (eps_pred)
+    """
+    # --- Handle list inputs ---
+    if isinstance(noisy, list):
+        noisy = noisy[-1]
+    if isinstance(predicted, list):
+        predicted = predicted[-1]
+    if isinstance(predicted_noise, list):
+        predicted_noise = predicted_noise[-1]
+
+    # --- Move to numpy ---
+    noisy_np = noisy[sample_idx].detach().cpu().numpy()
+    pred_np = predicted[sample_idx].detach().cpu().numpy()
+    gt_np = ground_truth[sample_idx].detach().cpu().numpy()
+    noise_np = predicted_noise[sample_idx].detach().cpu().numpy() if predicted_noise is not None else None
+
+    L, num_joints = gt_np.shape
+    # if joint_names is None:
+    #     joint_names = [f'Joint {j+1}' for j in range(num_joints)]
+
+    # --- Number of columns (3 or 4 depending on noise) ---
+    num_cols = 4 if noise_np is not None else 3
+
+    fig, axes = plt.subplots(num_joints, num_cols, figsize=(4*num_cols, 2.2*num_joints), sharex=True)
+    if num_joints == 1:
+        axes = axes.reshape(1, num_cols)
+
+    for j in range(num_joints):
+        # 1️⃣ Ground truth
+        ax_gt = axes[j, 0]
+        ax_gt.plot(range(L), gt_np[:, j], color='green', lw=2)
+        if j == 0:
+            ax_gt.set_title('Ground Truth', fontsize=12, fontweight='bold')
+        ax_gt.set_ylabel(joint_names[j], fontsize=9)
+        ax_gt.grid(alpha=0.3)
+
+        # 2️⃣ Noisy input
+        ax_noisy = axes[j, 1]
+        ax_noisy.plot(range(L), noisy_np[:, j], color='orange', lw=1.8)
+        if j == 0:
+            ax_noisy.set_title('Noisy Input', fontsize=12, fontweight='bold')
+        ax_noisy.grid(alpha=0.3)
+
+        # 3️⃣ Predicted clean
+        ax_pred = axes[j, 2]
+        ax_pred.plot(range(L), pred_np[:, j], color='blue', lw=2)
+        if j == 0:
+            ax_pred.set_title('data constructed', fontsize=12, fontweight='bold')
+        ax_pred.grid(alpha=0.3)
+
+        # 4️⃣ Predicted noise (optional)
+        if noise_np is not None:
+            ax_noise = axes[j, 3]
+            ax_noise.plot(range(L), noise_np[:, j], color='red', lw=2)
+            if j == 0:
+                ax_noise.set_title('Predicted Noise (ε)', fontsize=12, fontweight='bold')
+            ax_noise.grid(alpha=0.3)
+
+    plt.suptitle(f"Timestep t = {t}", fontsize=14, fontweight='bold')
+    plt.xlabel("Sequence frame index")
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+    
+    plt.show()
+ 
+def sample_from_gt_with_visualization(
+    model, diffusion, cond, y,
+    t_start:int=None, steps:int=1000, eta:float=0.0, device="cpu",
+    save_path="denoise_from_gt.png", visualise=True
+):
+    """
+    Démarre le DDIM à partir d'un x_t construit depuis la ground truth (y).
+    - Si t_start est None: on prend le t_start auto (a_bar >= 1e-2).
+    - Sinon, on utilise exactement le t_start demandé.
+    """
+    model.eval()
+    cond = cond.to(device)  # [B,L,F]
+    y    = y.to(device)     # [B,L,J]
+    B, L, Fd = cond.shape
+    J = y.size(-1)
+
+    a_bar, _ = diffusion._buffers(device)
+    eps_ = 1e-5
+    min_a_bar = 1e-2
+
+    # --- choix du t_start ---
+    if t_start is None:
+        valid = torch.nonzero(a_bar >= min_a_bar, as_tuple=False).flatten()
+        t0 = int(valid[-1].item()) if len(valid) > 0 else int((diffusion.T - 1) * 0.98)
+    else:
+        t0 = int(t_start)
+
+    # --- init depuis la GT bruitée au pas t0 ---
+    true_noise0 = torch.randn(B, L, J, device=device)
+    t0_vec = torch.full((B,), t0, dtype=torch.long, device=device)
+    x, _ = diffusion.add_noise(y, t0_vec, noise=true_noise0)  # <= différence clé
+
+    # --- planning ts (cosine spacing décroissant t0 -> 0) ---
+    s = torch.linspace(0, 1, steps, device=device)
+    s = (1 - torch.cos(math.pi * s)) / 2
+    t_float = t0 * (1 - s)
+    ts = torch.round(t_float).long().unique_consecutive()
+    if ts[0] != t0: ts = torch.cat([torch.tensor([t0], device=device), ts])
+    if ts[-1] != 0: ts = torch.cat([ts, torch.tensor([0], device=device)])
+
+    noisy_trajectory, clean_trajectory, trajectory_steps = [], [], []
+    noisy_trajectory.append(x.detach().cpu().clone())
+
+    for i in range(len(ts)):
+        t = ts[i].repeat(B)
+        eps = model(x, cond, t)
+
+        a_t = a_bar[t].view(B,1,1).clamp(eps_, 1-eps_)
+        sqrt_a_t, sqrt_one_t = torch.sqrt(a_t), torch.sqrt(1 - a_t)
+
+        # reconstruit x0 à ce pas
+        x0_pred = (x - sqrt_one_t * eps) / sqrt_a_t
+        
+        if i == 49:    
+            visualize_per_joint_timestep(
+                noisy=x,
+                predicted=x0_pred,
+                ground_truth=y,
+                predicted_noise=eps,
+                t=i,
+                joint_names=JOINT_NAMES,
+                show=True
+            )
+            
+        # a_prev
+        if i < len(ts) - 1:
+            t_next = ts[i+1].repeat(B)
+            a_prev = a_bar[t_next].view(B,1,1).clamp(eps_, 1-eps_)
+        else:
+            a_prev = torch.ones_like(a_t)
+        sqrt_a_prev, sqrt_one_prev = torch.sqrt(a_prev), torch.sqrt(1 - a_prev)
+
+        # update DDIM
+        if eta == 0.0:
+            x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps) + sqrt_one_prev * eps
+        
+        else:
+            sigma_t = eta * torch.sqrt((1 - a_prev) / (1 - a_t)) * torch.sqrt(1 - a_t / a_prev)
+            z = torch.randn_like(x)
+            x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps) \
+                + torch.sqrt(1 - a_prev - sigma_t**2) * eps + sigma_t * z
+
+    return x
+
+def analyze_single_t(model, diffusion, cond, y, t:int, device="cuda"):
+    """
+    Ajoute un bruit contrôlé à la GT au pas t, fait prédire eps,
+    reconstruit x0, et renvoie des métriques utiles.
+    """
+    model.eval()
+    cond = cond.to(device)      # [B,L,F]
+    y    = y.to(device)         # [B,L,J]
+    B    = y.size(0)
+
+    # On force le même t pour tout le batch (tu peux aussi passer un vecteur de t)
+    t_vec = torch.full((B,), int(t), dtype=torch.long, device=device)
+
+    # Fabrique x_t avec bruit connu
+    true_noise = torch.randn_like(y)
+    x_t, _ = diffusion.add_noise(y, t_vec, noise=true_noise)
+
+    # Prédit le bruit puis reconstruit x0
+    pred_noise = model(x_t, cond, t_vec)
+    a_bar, _ = diffusion._buffers(device)
+    a_t = a_bar[t_vec].view(B,1,1).clamp(1e-5, 1-1e-5)
+    x0_pred = (x_t - torch.sqrt(1 - a_t) * pred_noise) / torch.sqrt(a_t)
+
+    # Métriques
+    mse_eps  = torch.mean((pred_noise - true_noise)**2).item()
+    mse_x0   = torch.mean((x0_pred - y)**2).item()
+
+    return {
+        "x_t": x_t, "true_noise": true_noise, "pred_noise": pred_noise,
+        "x0_pred": x0_pred, "mse_eps": mse_eps, "mse_x0": mse_x0, "t": int(t)
+    }

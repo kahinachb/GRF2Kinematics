@@ -17,7 +17,7 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from utils import build_loaders_shared
+from loader_utils import build_loaders_shared
 
 class ForcesTojointsLSTM(nn.Module):
     """LSTM/BiLSTM + petit MLP pour prédire les angles articulaires à partir des forces."""

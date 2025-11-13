@@ -18,7 +18,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from train_lstm import ForcesTojointsLSTM
-from utils import slice_trial_into_sequences
+from loader_utils import slice_trial_into_sequences
 from inference_utils import *
 
 

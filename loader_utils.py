@@ -1,5 +1,6 @@
 # utils.py
 import os
+import glob
 import pickle
 import numpy as np
 from pathlib import Path
@@ -264,3 +265,45 @@ def visualize_collected(collected, max_joints=12, save_dir=None, prefix="val_epo
                 out = f"{save_dir}/{prefix}_e{epoch:03d}_batch{bidx:04d}_sample{s:02d}.png"
                 plt.savefig(out, dpi=130)
                 plt.close(fig)
+
+
+class ForceToJointDataset(Dataset):
+    def __init__(self, root_dir, subjects, seq_len=None):
+        self.samples = []
+        root = Path(root_dir)
+
+        for subj in subjects:
+            subj_path = root / subj
+            if not subj_path.is_dir():
+                continue
+
+            trials = [p for p in subj_path.iterdir() if p.is_dir()]
+            for trial in trials:
+                f_path = trial / "forces.npy"
+                j_path = trial / "joints.npy"
+                if f_path.exists() and j_path.exists():
+                    self.samples.append((str(f_path), str(j_path)))
+
+        self.seq_len = seq_len
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        f_path, j_path = self.samples[idx]
+        forces = np.load(f_path)    # (T, 12)
+        joints = np.load(j_path)    # (T, 12)
+
+        # Option: crop/pad windows
+        if self.seq_len is not None:
+            T = forces.shape[0]
+            if T >= self.seq_len:
+                start = np.random.randint(0, T - self.seq_len + 1)
+                forces = forces[start:start+self.seq_len]
+                joints = joints[start:start+self.seq_len]
+            else:
+                pad = self.seq_len - T
+                forces = np.pad(forces, ((0, pad), (0, 0)), mode="edge")
+                joints = np.pad(joints, ((0, pad), (0, 0)), mode="edge")
+
+        return torch.from_numpy(forces).float(), torch.from_numpy(joints).float()

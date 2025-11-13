@@ -8,9 +8,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-from utils import build_loaders_shared, visualize_collected
+from loader_utils import build_loaders_shared, visualize_collected
 import matplotlib.pyplot as plt
-from inference_utils import visualize_noise_and_prediction
+from inference_utils import visualize_noise_and_prediction, visualize_per_joint_timestep,JOINT_NAMES
 
 # --------------------------
 # Time embedding (sin/cos) so every step in the sequence “knows” the current diffusion time.
@@ -146,7 +146,6 @@ class Diffusion:
 
     def register_schedule(self, schedule:str):
         if schedule == "linear":
-            print("linear")
             betas = torch.linspace(1e-4, 0.02, self.T)
         elif schedule == "cosine":
             s = 0.008
@@ -158,6 +157,8 @@ class Diffusion:
             betas = betas.clamp(1e-8, 0.999)
         else:
             raise ValueError("Unknown schedule")
+        
+
         self.betas = betas.to(torch.float64)
         self.alphas = (1.0 - self.betas)   #coeff [0-1]
         a_bar = torch.cumprod(self.alphas, dim=0) 
@@ -189,8 +190,8 @@ class Diffusion:
 
         B, L, Fd = cond.shape
         J = model.joint_dim
-        x = torch.randn(B, L, J, device=device)
-        
+        x = torch.randn(B, L, J, device=device) #initial noise
+
         # Store both noisy inputs and predicted clean outputs
         noisy_trajectory = []
         clean_trajectory = []
@@ -205,11 +206,12 @@ class Diffusion:
 
         # --- choose a noisy start ---
         valid = torch.nonzero(a_bar >= min_a_bar, as_tuple=False).flatten()
+
         if len(valid) == 0:
-            t_start = int((self.T - 1) * 0.98)
+            t_start = int((self.T - 1))
         else:
             t_start = int(valid[-1].item())
-
+        
         # cosine-spaced schedule
         s = torch.linspace(0, 1, steps, device=device)
         s = (1 - torch.cos(s * math.pi)) / 2
@@ -222,7 +224,7 @@ class Diffusion:
         print("a_t[0] =", a_bar[ts[0]].item(), "a_t[-1] =", a_bar[ts[-1]].item())
 
         # --- Denoising loop ---
-        for i in range(len(ts)):
+        for i in range(len(ts)): 
             t = ts[i].repeat(B)
             eps = model(x, cond, t)
 
@@ -240,11 +242,21 @@ class Diffusion:
 
             # Predict clean data (x0)
             x0_pred = (x - sqrt_one_t * eps) / sqrt_a_t
-            
+                
             if i % 5 == 0 or i == len(ts)-1:
                 print(f"[DDIM] step {i:02d} | x.std={x.std().item():.3f} "
                     f"| eps.std={eps.std().item():.3f} | x0_pred.std={x0_pred.std().item():.3f} "
                     f"| a_t={a_t.mean().item():.6f}")
+            if i == 49: 
+                visualize_per_joint_timestep(
+                    noisy=x,
+                    predicted=x0_pred,
+                    ground_truth=y,
+                    predicted_noise=eps,
+                    t=i,
+                    joint_names=JOINT_NAMES,
+                    show=True
+                )
 
             # Save every 10 steps
             if (i + 1) % 10 == 0 or i == len(ts) - 1:
@@ -253,24 +265,19 @@ class Diffusion:
 
             # DDIM update
             if eta == 0.0:
+                # x = sqrt_a_prev *x0_pred + sqrt_one_prev* eps
                 x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps) + sqrt_one_prev * eps
-            else:
+            else: #ddpm 
                 sigma_t = eta * torch.sqrt((1 - a_prev) / (1 - a_t)) * torch.sqrt(1 - a_t / a_prev)
                 z = torch.randn_like(x)
-                x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps) \
-                    + torch.sqrt(1 - a_prev - sigma_t**2) * eps + sigma_t * z
+                x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps)+ torch.sqrt(1 - a_prev - sigma_t**2) * eps + sigma_t * z
             
             # Save noisy x after update (input for next step)
             if (i + 1) % 10 == 0 or i == len(ts) - 1:
                 noisy_trajectory.append(x.detach().cpu().clone())
-
-        # --- Visualization ---
-        if visualise : 
-            visualize_noise_and_prediction(noisy_trajectory, clean_trajectory, 
-                                        trajectory_steps, y, B, J, save_path)
         
         return x
-
+    
 def reconstruct_x0_from_pred(x_t, pred_eps, t, diffusion, device, eps=1e-5):
     # x0 = (x_t - sqrt(1 - a_t) * eps_pred) / sqrt(a_t)
     a_bar, _ = diffusion._buffers(device)
@@ -460,54 +467,54 @@ def main():
 
 
     # --- Quick sample demo on a validation batch ---
-    model.eval()
-    with torch.no_grad():
-        forces, joints = next(iter(val_loader))
-        forces = forces.to(args.device)
-        joints = joints.to(args.device)
+    # model.eval()
+    # with torch.no_grad():
+    #     forces, joints = next(iter(val_loader))
+    #     forces = forces.to(args.device)
+    #     joints = joints.to(args.device)
 
-        print("forces mean/std:", forces.mean().item(), forces.std().item())
-        print("joints mean/std:", joints.mean().item(), joints.std().item())
+    #     print("forces mean/std:", forces.mean().item(), forces.std().item())
+    #     print("joints mean/std:", joints.mean().item(), joints.std().item())
 
-        samples = diffusion.sample_with_visualization(
-            model, forces,joints,visualise=True, steps=args.sample_steps, eta=0.0, device=args.device
-        )  # [B,L,J]
+    #     samples = diffusion.sample_with_visualization(
+    #         model, forces,joints,visualise=True, steps=args.sample_steps, eta=0.0, device=args.device
+    #     )  # [B,L,J]
 
-        # If normalized, inverse-transform for inspection
-        if args.normalize:
-            with open(Path(args.scaler_dir) / "joint_scaler.pkl", "rb") as f:
-                jscaler: StandardScaler = pickle.load(f)
+    #     # If normalized, inverse-transform for inspection
+    #     if args.normalize:
+    #         with open(Path(args.scaler_dir) / "joint_scaler.pkl", "rb") as f:
+    #             jscaler: StandardScaler = pickle.load(f)
 
-            B, L, J = samples.shape
-            preds = samples.detach().cpu().numpy().reshape(-1, J)
-            preds = jscaler.inverse_transform(preds).reshape(B, L, J)
+    #         B, L, J = samples.shape
+    #         preds = samples.detach().cpu().numpy().reshape(-1, J)
+    #         preds = jscaler.inverse_transform(preds).reshape(B, L, J)
 
-            gt = joints.detach().cpu().numpy().reshape(-1, J)
-            gt = jscaler.inverse_transform(gt).reshape(B, L, J)
-        else:
-            preds = samples.detach().cpu().numpy()
-            gt = joints.detach().cpu().numpy()
+    #         gt = joints.detach().cpu().numpy().reshape(-1, J)
+    #         gt = jscaler.inverse_transform(gt).reshape(B, L, J)
+    #     else:
+    #         preds = samples.detach().cpu().numpy()
+    #         gt = joints.detach().cpu().numpy()
 
-        # --- Plot ground truth vs prediction---
-    b = 0  # pick first sample
-    num_joints_to_plot = min(12, preds.shape[-1])  # up to 12 joints
-    fig, axes = plt.subplots(num_joints_to_plot // 3, 3, figsize=(14, 10))
-    axes = axes.flatten()
+    #     # --- Plot ground truth vs prediction---
+    # b = 0  # pick first sample
+    # num_joints_to_plot = min(12, preds.shape[-1])  # up to 12 joints
+    # fig, axes = plt.subplots(num_joints_to_plot // 3, 3, figsize=(14, 10))
+    # axes = axes.flatten()
 
-    for j in range(num_joints_to_plot):
-        ax = axes[j]
-        ax.plot(gt[b, :, j], label="True", lw=0.8)
-        ax.plot(preds[b, :, j], label="Pred", lw=0.8, alpha=0.8)
-        ax.set_title(f"Joint {j}")
-        ax.legend(fontsize=7)
-        ax.grid(True)
+    # for j in range(num_joints_to_plot):
+    #     ax = axes[j]
+    #     ax.plot(gt[b, :, j], label="True", lw=0.8)
+    #     ax.plot(preds[b, :, j], label="Pred", lw=0.8, alpha=0.8)
+    #     ax.set_title(f"Joint {j}")
+    #     ax.legend(fontsize=7)
+    #     ax.grid(True)
 
-    for ax in axes[num_joints_to_plot:]:
-        ax.axis("off")
+    # for ax in axes[num_joints_to_plot:]:
+    #     ax.axis("off")
 
-    plt.suptitle(f"Diffusion | Val sample #{b} | steps={args.sample_steps}")
-    plt.tight_layout()
-    plt.savefig('pred_vs_gt.png')
+    # plt.suptitle(f"Diffusion | Val sample #{b} | steps={args.sample_steps}")
+    # plt.tight_layout()
+    # plt.savefig('pred_vs_gt.png')
 
 if __name__ == "__main__":
     main()

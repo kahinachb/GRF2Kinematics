@@ -17,8 +17,8 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from train_diffuser import LSTMDiffusionDenoiser, Diffusion  
-from utils import slice_trial_into_sequences  
+from train_diffuser import LSTMDiffusionDenoiser, Diffusion 
+from loader_utils import slice_trial_into_sequences  
 from inference_utils import *
 
 # ==========================
@@ -47,7 +47,7 @@ class DiffusionInference:
         self.force_scaler, self.joint_scaler = self._load_scalers(scaler_dir)
         self.diffusion = Diffusion(
             timesteps=self.config.get("timesteps", 1000),
-            beta_schedule="cosine"
+            beta_schedule="linear"
         )
 
         self.joint_names = JOINT_NAMES
@@ -115,6 +115,10 @@ class DiffusionInference:
 
         xt = torch.from_numpy(x).unsqueeze(0).to(self.device)  # [1, L, F]
         yt = torch.from_numpy(x).unsqueeze(0).to(self.device)
+
+        # samples = sample_from_gt_with_visualization(
+        # self.model, self.diffusion, xt, yt)
+        
         samples = self.diffusion.sample_with_visualization(
             model=self.model,
             cond=xt,
@@ -123,7 +127,7 @@ class DiffusionInference:
             eta=self.eta,
             device=self.device
         )  # [1, L, J] in normalized joint space
-        # print("norm mean/std:", samples.mean().item(), samples.std().item())  # should be O(1)
+        print("norm mean/std:", samples.mean().item(), samples.std().item())  # should be O(1)
 
         arr = samples.squeeze(0).cpu().numpy()  # [L, J]
 
@@ -212,11 +216,11 @@ def main():
 
     # Inference behavior
     ap.add_argument("--mode", type=str, choices=["sliding-last-step", "batch-seq"], default="sliding-last-step")
-    ap.add_argument("--seq_len", type=int, default=10, help="Window length used at training")
+    ap.add_argument("--seq_len", type=int, default=50, help="Window length used at training")
     ap.add_argument("--stride", type=int, default=1, help="Stride for batch-seq mode; ignored for sliding-last-step")
 
     # Sampler params
-    ap.add_argument("--sample_steps", type=int, default=50)
+    ap.add_argument("--sample_steps", type=int, default=1000)
     ap.add_argument("--eta", type=float, default=0.0)
 
     # Viz
