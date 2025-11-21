@@ -236,10 +236,10 @@ def compute_normalization_stats(data_dir: str, subjects: List[str]):
 # ======================
 
 def main():
-    data_dir = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data"
+    data_dir = "/datasets/GRF2Kine/processed_data"
     seq_len = 128
     batch_size = 8
-    num_epochs = 1
+    num_epochs = 500
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ---- Split sujets ----
