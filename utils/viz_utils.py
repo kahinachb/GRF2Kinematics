@@ -4,6 +4,12 @@ import numpy as np
 import pinocchio as pin
 import meshcat
 
+def place_gep(viz, name, M):
+    viz.viewer.gui.applyConfiguration(name, pin.SE3ToXYZQUAT(M).tolist())
+    viz.viewer.gui.refresh()
+
+
+
 def meshcat_material(r, g, b, a):
     material = meshcat.geometry.MeshPhongMaterial()
     material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
