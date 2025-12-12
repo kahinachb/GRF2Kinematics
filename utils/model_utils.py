@@ -2,6 +2,126 @@ import numpy as np
 from utils.linear_algebra_utils import *
 from pinocchio.robot_wrapper import RobotWrapper
 import pinocchio as pin
+from typing import Tuple, Optional
+import hppfcl as fcl
+
+class RobotConfig:
+    """Configuration du robot 2-DOF"""
+    L1: float = 1.0          
+    L2: float = 1.0          
+    m1: float = 1.0          
+    m2: float = 1.0          
+    body_radius: float = 0.1 
+    
+    # Couleurs (RGBA)
+    color_base: np.ndarray = np.array([1.0, 0.0, 0.0, 1.0])  
+    color_link1: np.ndarray = np.array([0.2, 0.2, 0.8, 1.0]) 
+    color_link2: np.ndarray = np.array([0.8, 0.2, 0.2, 1.0]) 
+
+
+# ============================================================
+# Fonction principale de construction
+# ============================================================
+
+def build_2dof_model(
+    config: Optional[RobotConfig] = None,
+) -> Tuple:
+
+    # Configuration
+    if config is None:
+        config = RobotConfig()
+    
+    # Initialisation des modèles
+    model = pin.Model()
+    geom_model = pin.GeometryModel()
+    
+    # ========================================
+    # Base (sphère rouge)
+    # ========================================
+    base_shape = fcl.Sphere(config.body_radius)
+    base_geom = pin.GeometryObject("base", 0, pin.SE3.Identity(), base_shape)
+    base_geom.meshColor = config.color_base
+    geom_model.addGeometryObject(base_geom)
+    
+    parent_id = 0  # universe
+    
+    # ========================================
+    # Joint 1 (rotation autour de Y)
+    # ========================================
+    joint1_placement = pin.SE3.Identity()
+    joint1_id = model.addJoint(
+        parent_id,
+        pin.JointModelRY(),
+        joint1_placement,
+        "joint1"
+    )
+    # Inertie du lien 1
+    inertia1 = pin.Inertia.FromSphere(config.m1, config.body_radius)
+    body1_placement = pin.SE3.Identity()
+    body1_placement.translation = np.array([0.0, 0.0, config.L1 / 2.0])
+    model.appendBodyToJoint(joint1_id, inertia1, body1_placement)
+    
+    # Géométrie du lien 1 (cylindre bleu)
+    shape1 = fcl.Cylinder(config.body_radius, config.L1)
+    shape1_placement = pin.SE3.Identity()
+    shape1_placement.translation = np.array([0.0, 0.0, config.L1 / 2.0])
+    geom1 = pin.GeometryObject("link1", joint1_id, shape1_placement, shape1)
+    geom1.meshColor = config.color_link1
+    geom_model.addGeometryObject(geom1)
+    
+    # ========================================
+    # Joint 2 (rotation autour de Y)
+    # ========================================
+    joint2_placement = pin.SE3.Identity()
+    joint2_placement.translation = np.array([0.0, 0.0, config.L1])
+    joint2_id = model.addJoint(
+        joint1_id,
+        pin.JointModelRY(),
+        joint2_placement,
+        "joint2"
+    )
+    
+    # Inertie du lien 2
+    inertia2 = pin.Inertia.FromSphere(config.m2, config.body_radius)
+    body2_placement = pin.SE3.Identity()
+    body2_placement.translation = np.array([0.0, 0.0, config.L2 / 2.0])
+    model.appendBodyToJoint(joint2_id, inertia2, body2_placement)
+    
+    # Géométrie du lien 2 (cylindre rouge-orangé)
+    shape2 = fcl.Cylinder(config.body_radius, config.L2)
+    shape2_placement = pin.SE3.Identity()
+    shape2_placement.translation = np.array([0.0, 0.0, config.L2 / 2.0])
+    geom2 = pin.GeometryObject("link2", joint2_id, shape2_placement, shape2)
+    geom2.meshColor = config.color_link2
+    geom_model.addGeometryObject(geom2)
+    
+    # ========================================
+    # Création des data
+    # ========================================
+    visual_model = geom_model
+    data = model.createData()
+    
+    
+    return model, data, geom_model,joint1_id
+
+
+
+def compute_My(q1, q2, model, data, joint1_id, q, v, a):
+    """Calcule My (wrench monde à la base) pour une config (q1,q2)."""
+    q[:] = [q1, q2]
+
+    # inverse dynamics
+    tau = pin.rnea(model, data, q, v, a)
+    # kinematics pour avoir oMi à jour
+    pin.forwardKinematics(model, data, q, v, a)
+
+    wrench_base = data.f[joint1_id]         # wrench dans le repère du joint1
+    oM1 = data.oMi[joint1_id]               # SE3 joint1 dans le monde
+    f_world = oM1.act(wrench_base)          # wrench dans le monde
+
+    M = f_world.angular                     # [Mx, My, Mz]
+    return M[1]                             # My
+
 
 class Robot(RobotWrapper):
     """_Class to load a given urdf_
