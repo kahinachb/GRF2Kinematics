@@ -11,7 +11,7 @@ from utils.viz_utils import add_sphere, place
 from utils.model_utils import *
 
 # === Load data ===
-df = pd.read_csv("DATA/Vincent/Trial109.csv")
+df = pd.read_csv("DATA/Anais/subject01/static2_markers.csv")
 
 
 mks_dict, start_sample_dict = read_mks_data(df, start_sample=0, converter=1000.0)

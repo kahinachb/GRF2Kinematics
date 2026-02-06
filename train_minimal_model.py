@@ -162,6 +162,59 @@ class DiffusionProcess:
         
         return trajectory if return_trajectory else x_t
     
+    def reverse_diffusion_ddim(
+        self,
+        model: nn.Module,
+        shape: Tuple[int, ...],
+        condition: torch.Tensor,
+        num_inference_steps: int = 50, 
+        eta: float = 0.0,              # eta=0.0 for DDIM deterministic
+        return_trajectory: bool = False
+    ) -> torch.Tensor:
+        batch_size = shape[0]
+        device = self.device
+        
+        times = torch.linspace(0, self.config.num_timesteps - 1, num_inference_steps + 1).long().to(device)
+        times = list(reversed(times.tolist())) 
+        
+        x_t = torch.randn(shape, device=device)
+        trajectory = [x_t] if return_trajectory else None
+
+        # e.g : t=999, t_prev=950
+        for i in range(len(times) - 1):
+            t_idx = times[i]
+            t_prev_idx = times[i+1]
+            
+            t_tensor = torch.full((batch_size,), t_idx, device=device, dtype=torch.long)
+            
+            eps_pred = model(x_t, t_tensor, condition)
+            
+            
+            alpha_bar_t = self.alpha_bars[t_idx]
+            alpha_bar_prev = self.alpha_bars[t_prev_idx] if t_prev_idx >= 0 else torch.tensor(1.0).to(device) #ddim
+            
+            #predicted x_0
+            pred_x0 = (x_t - torch.sqrt(1.0 - alpha_bar_t) * eps_pred) / torch.sqrt(alpha_bar_t)
+            
+            # sigma_t (noise)
+            # ifeta = 0, sigma = 0 (DDIM déterministe)
+            sigma_t = eta * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar_t)) * torch.sqrt(1 - alpha_bar_t / alpha_bar_prev)
+            
+            # direction pointing to x_t
+            pred_dir_xt = torch.sqrt(1 - alpha_bar_prev - sigma_t**2) * eps_pred
+            
+            
+            x_t = torch.sqrt(alpha_bar_prev) * pred_x0 + pred_dir_xt
+            
+            # Ajouter du bruit si eta > 0
+            if sigma_t > 0:
+                x_t += sigma_t * torch.randn_like(x_t)
+
+            if return_trajectory:
+                trajectory.append(x_t)
+
+        return trajectory if return_trajectory else x_t
+    
     def _reverse_step(
         self,
         x_t: torch.Tensor,
@@ -175,16 +228,14 @@ class DiffusionProcess:
         
         coef1 = 1.0 / torch.sqrt(alpha_t)
         coef2 = (1.0 - alpha_t) / torch.sqrt(1.0 - alpha_bar_t)
-        
-        mean = coef1 * (x_t - coef2 * eps_pred)
-        
+                
         # add noise if t !=0
         if t > 0:
             noise = torch.randn_like(x_t)
             sigma_t = torch.sqrt(beta_t)
-            x_t_minus_1 = mean + sigma_t * noise
+            x_t_minus_1 = coef1 * (x_t - coef2 * eps_pred) + sigma_t * noise #ddpm 
         else:
-            x_t_minus_1 = mean
+            x_t_minus_1 = coef1 * (x_t - coef2 * eps_pred)
         
         return x_t_minus_1
     
