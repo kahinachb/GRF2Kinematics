@@ -31,7 +31,7 @@ class BiomechanicsDataProcessor:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Define force columns (6D GRFM for each foot)
-        self.force_columns_right = ['FX1', 'FY1', 'FZ1', 'MX1', 'MY1', 'MZ1']
+        self.force_columns_right = ['FX1', 'FY1', 'FZ1', 'MX1', 'MY1', 'MZ1']   #dataset anais, 1 left, 2 right , dataset vincent , 1 right et 2 left
         self.force_columns_left = ['FX2', 'FY2', 'FZ2', 'MX2', 'MY2', 'MZ2']
         
         # Define joint angle columns

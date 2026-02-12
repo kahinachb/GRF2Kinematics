@@ -1,570 +1,285 @@
-import os, math, argparse, pickle
-from pathlib import Path
-from typing import Optional, Tuple
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
-from loader_utils import build_loaders_shared, visualize_collected
+import torch.optim as optim
+import numpy as np
 import matplotlib.pyplot as plt
-from inference_utils import visualize_noise_and_prediction, visualize_per_joint_timestep,JOINT_NAMES
+from torch.utils.data import Dataset, DataLoader
+from pathlib import Path
+import random
+import json
 
-# --------------------------
-# Time embedding (sin/cos) so every step in the sequence “knows” the current diffusion time.
-# --------------------------
-class SinusoidalTimeEmbedding(nn.Module):
-    def __init__(self, dim:int):
-        super().__init__()
-        self.dim = dim
-    def forward(self, t: torch.LongTensor):  # [B]
-        device = t.device
-        half = self.dim // 2
-        # guard for tiny dims
-        denom = max(1, half - 1)
-        freqs = torch.exp(-math.log(10000) * torch.arange(half, device=device).float() / denom)
-        args = t.float().unsqueeze(1) * freqs.unsqueeze(0)  # [B, half]
-        emb = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)  # [B, 2*half]
-        if self.dim % 2 == 1:
-            emb = F.pad(emb, (0,1), mode='constant')
-        return emb  # [B, dim]mais
+# ==========================================
+# 0. CLASSE DDPM (Gestion du Forward/Reverse)
+# ==========================================
+class DDPM:
+    def __init__(self, device, n_steps=1000, min_beta=1e-4, max_beta=0.02):
+        self.n_steps = n_steps
+        self.device = device
+        self.betas = torch.linspace(min_beta, max_beta, n_steps).to(device)
+        self.alphas = 1.0 - self.betas
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        
+        # Pour le Forward
+        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
 
-# --------------------------
-# FiLM (optional) Feature-wise modulation
-# --------------------------
-class FiLM(nn.Module):
-    def __init__(self, d_in:int, d_feat:int):
-        super().__init__()
-        self.linear = nn.Linear(d_in, 2*d_feat)
-    def forward(self, cond:torch.Tensor):  # [B, d_in]
-        gamma, beta = self.linear(cond).chunk(2, dim=-1)
-        return gamma, beta
-
-# --------------------------
-# LSTM denoiser (predicts noise eps)
-# --------------------------
-class LSTMDiffusionDenoiser(nn.Module):
-    """
-    eps_theta(x_t, forces, t) -> [B, L, J]
-    - Concatenate per-step [x_t, forces, time_emb] -> project -> LSTM
-    - (Optional) FiLM modulation from global pooled cond
-    """
-    def __init__(self,
-                 joint_dim:int,
-                 cond_dim:int,
-                 hidden_size:int=128,
-                 num_layers:int=2,
-                 dropout:float=0.2,
-                 bidirectional:bool=False,
-                 time_dim:int=128,
-                 use_film:bool=True):
-        super().__init__()
-        self.joint_dim = joint_dim
-        self.cond_dim  = cond_dim
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.num_dirs = 2 if bidirectional else 1
-        self.use_film = use_film
-
-        self.time_emb = nn.Sequential(
-            SinusoidalTimeEmbedding(time_dim),
-            nn.Linear(time_dim, time_dim), nn.SiLU(),
-            nn.Linear(time_dim, time_dim)
-        )
-        in_feat = joint_dim + cond_dim + time_dim
-        self.in_proj = nn.Linear(in_feat, hidden_size)
-
-        self.lstm = nn.LSTM(
-            input_size=hidden_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,
-            bidirectional=bidirectional
-        )
-        lstm_out_dim = hidden_size * self.num_dirs
-
-        # Build a global cond representation (for FiLM + init states)
-        self.cond_proj = nn.Sequential(
-            nn.Linear(cond_dim, hidden_size), nn.SiLU(),
-            nn.Linear(hidden_size, hidden_size)
-        )
-        if use_film:
-            self.film = FiLM(d_in=hidden_size, d_feat=lstm_out_dim)
-
-        # Init hidden states from global cond
-        self.init_h = nn.Linear(hidden_size, self.num_layers * self.num_dirs * hidden_size)
-        self.init_c = nn.Linear(hidden_size, self.num_layers * self.num_dirs * hidden_size)
-
-        self.head = nn.Sequential(
-            nn.Linear(lstm_out_dim, lstm_out_dim), nn.SiLU(),
-            nn.Linear(lstm_out_dim, joint_dim)
+    def sample_forward(self, x_0, t, noise):
+        """Forward Diffusion: q(x_t | x_0)"""
+        return (
+            self.sqrt_alphas_cumprod[t].view(-1, 1, 1) * x_0 +
+            self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1) * noise
         )
 
-    def forward(self, x_t:torch.Tensor, cond:torch.Tensor, t:torch.LongTensor):
-        B, L, J = x_t.shape
-        Fd = cond.size(-1)
-
-        # per-step features
-        t_emb = self.time_emb(t)                      # [B, time_dim]
-        t_rep = t_emb.unsqueeze(1).expand(B, L, -1)   # [B, L, time_dim]
-        x_in  = torch.cat([x_t, cond, t_rep], dim=-1) # [B, L, J+F+T]
-        x_in  = self.in_proj(x_in)                    # [B, L, H]
-
-        # global cond
-        cond_flat = cond.reshape(B*L, Fd)
-        cond_per_t = self.cond_proj(cond_flat).reshape(B, L, -1)  # [B, L, H]
-        c_emb = cond_per_t.mean(dim=1)                             # [B, H]
-
-        # init states from global cond
-        H = self.hidden_size
-        num_layers_total = self.num_layers * self.num_dirs
-        h0 = self.init_h(c_emb).view(num_layers_total, B, H).contiguous()
-        c0 = self.init_c(c_emb).view(num_layers_total, B, H).contiguous()
-
-        h_seq, _ = self.lstm(x_in, (h0, c0))          # [B, L, H*num_dirs]
-
-        if self.use_film:
-            gamma, beta = self.film(c_emb)            # [B, H*num_dirs]
-            gamma = gamma.unsqueeze(1)                 # [B, 1, D]
-            beta  = beta.unsqueeze(1)                  # [B, 1, D]
-            h_seq = h_seq * (1 + gamma) + beta
-
-        eps = self.head(h_seq)                         # [B, L, J]
-        return eps
-
-# --------------------------
-# Diffusion core (DDPM + DDIM sample)
-# --------------------------
-class Diffusion:
-    def __init__(self, timesteps:int=1000, beta_schedule:str="cosine"):
-        self.T = timesteps
-        self.register_schedule(beta_schedule)
-
-    def register_schedule(self, schedule:str):
-        if schedule == "linear":
-            betas = torch.linspace(1e-4, 0.02, self.T)
-        elif schedule == "cosine":
-            s = 0.008
-            steps = self.T + 1
-            x = torch.linspace(0, self.T, steps)
-            alphas_cumprod = torch.cos(((x / self.T) + s) / (1 + s) * math.pi * 0.5) ** 2
-            alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-            betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-            betas = betas.clamp(1e-8, 0.999)
+    def sample_reverse(self, model, x_t, t, cond):
+        """Reverse Diffusion Step: p(x_{t-1} | x_t, cond)"""
+        if t == 0:
+            z = 0
         else:
-            raise ValueError("Unknown schedule")
-        
-
-        self.betas = betas.to(torch.float64)
-        self.alphas = (1.0 - self.betas)   #coeff [0-1]
-        a_bar = torch.cumprod(self.alphas, dim=0) 
-        a_bar = a_bar.clamp(min=1e-5, max=0.999999) 
-        self.alphas_cumprod = a_bar.to(torch.float32)
-        self.alphas = self.alphas.to(torch.float32)
-
-    def _buffers(self, device):
-        a_bar = self.alphas_cumprod.to(device)
-        return a_bar, self.alphas.to(device)
-
-    def add_noise(self, x0:torch.Tensor, t:torch.LongTensor, noise:Optional[torch.Tensor]=None): #t + at - 
-        if noise is None: noise = torch.randn_like(x0)
-        a_bar, _ = self._buffers(t.device)
-        a_t = a_bar[t].view(-1, 1, 1)                       # [B,1,1]
-        x_t = torch.sqrt(a_t) * x0 + torch.sqrt(1 - a_t) * noise
-        return x_t, noise
-    
-    @torch.no_grad()
-    def sample_with_visualization(self, model, cond, y,visualise=True, steps=50, eta=0.0, device="cuda", 
-                                save_path="denoising_viz.png"):
-        """
-        Sample with visualization showing:
-        - The noisy input x fed to the model
-        - The predicted clean joints (x0) that DDIM produces
-        - The ground truth joints (y)
-        """
-        model.eval()
-
-        B, L, Fd = cond.shape
-        J = model.joint_dim
-        x = torch.randn(B, L, J, device=device) #initial noise
-
-        # Store both noisy inputs and predicted clean outputs
-        noisy_trajectory = []
-        clean_trajectory = []
-        trajectory_steps = []
-        
-        # Save initial noise
-        noisy_trajectory.append(x.detach().cpu().clone())
-
-        a_bar, _ = self._buffers(device)
-        eps_ = 1e-5
-        min_a_bar = 1e-2
-
-        # --- choose a noisy start ---
-        valid = torch.nonzero(a_bar >= min_a_bar, as_tuple=False).flatten()
-
-        if len(valid) == 0:
-            t_start = int((self.T - 1))
-        else:
-            t_start = int(valid[-1].item())
-        
-        # cosine-spaced schedule
-        s = torch.linspace(0, 1, steps, device=device)
-        s = (1 - torch.cos(s * math.pi)) / 2
-        t_float = t_start * (1 - s)
-        ts = torch.round(t_float).long()
-        ts = torch.unique_consecutive(ts)
-        if ts[0] != t_start: ts = torch.cat([torch.tensor([t_start], device=device), ts])
-        if ts[-1] != 0:      ts = torch.cat([ts, torch.tensor([0], device=device)])
-
-        print("a_t[0] =", a_bar[ts[0]].item(), "a_t[-1] =", a_bar[ts[-1]].item())
-
-        # --- Denoising loop ---
-        for i in range(len(ts)): 
-            t = ts[i].repeat(B)
-            eps = model(x, cond, t)
-
-            a_t = a_bar[t].view(B,1,1).clamp(eps_, 1 - eps_)
-            sqrt_a_t    = torch.sqrt(a_t)
-            sqrt_one_t  = torch.sqrt(1 - a_t)
-
-            if i < len(ts) - 1:
-                t_next = ts[i+1].repeat(B)
-                a_prev = a_bar[t_next].view(B,1,1).clamp(eps_, 1 - eps_)
-            else:
-                a_prev = torch.ones_like(a_t)
-            sqrt_a_prev   = torch.sqrt(a_prev)
-            sqrt_one_prev = torch.sqrt(1 - a_prev)
-
-            # Predict clean data (x0)
-            x0_pred = (x - sqrt_one_t * eps) / sqrt_a_t
-                
-            if i % 5 == 0 or i == len(ts)-1:
-                print(f"[DDIM] step {i:02d} | x.std={x.std().item():.3f} "
-                    f"| eps.std={eps.std().item():.3f} | x0_pred.std={x0_pred.std().item():.3f} "
-                    f"| a_t={a_t.mean().item():.6f}")
-            if i == 49: 
-                visualize_per_joint_timestep(
-                    noisy=x,
-                    predicted=x0_pred,
-                    ground_truth=y,
-                    predicted_noise=eps,
-                    t=i,
-                    joint_names=JOINT_NAMES,
-                    show=True
-                )
-
-            # Save every 10 steps
-            if (i + 1) % 10 == 0 or i == len(ts) - 1:
-                clean_trajectory.append(x0_pred.detach().cpu().clone())
-                trajectory_steps.append(f"Step {i+1}")
-
-            # DDIM update
-            if eta == 0.0:
-                # x = sqrt_a_prev *x0_pred + sqrt_one_prev* eps
-                x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps) + sqrt_one_prev * eps
-            else: #ddpm 
-                sigma_t = eta * torch.sqrt((1 - a_prev) / (1 - a_t)) * torch.sqrt(1 - a_t / a_prev)
-                z = torch.randn_like(x)
-                x = (sqrt_a_prev / sqrt_a_t) * (x - sqrt_one_t * eps)+ torch.sqrt(1 - a_prev - sigma_t**2) * eps + sigma_t * z
+            z = torch.randn_like(x_t)
             
-            # Save noisy x after update (input for next step)
-            if (i + 1) % 10 == 0 or i == len(ts) - 1:
-                noisy_trajectory.append(x.detach().cpu().clone())
+        beta_t = self.betas[t]
+        alpha_t = self.alphas[t]
+        alpha_bar_t = self.alphas_cumprod[t]
         
-        return x
-    
-def reconstruct_x0_from_pred(x_t, pred_eps, t, diffusion, device, eps=1e-5):
-    # x0 = (x_t - sqrt(1 - a_t) * eps_pred) / sqrt(a_t)
-    a_bar, _ = diffusion._buffers(device)
-    a_t = a_bar[t].view(-1, 1, 1).clamp(eps, 1 - eps)
-    sqrt_a_t = torch.sqrt(a_t)
-    sqrt_one_t = torch.sqrt(1 - a_t)
-    x0_pred = (x_t - sqrt_one_t * pred_eps) / sqrt_a_t
-    return x0_pred
-# --------------------------
-# Training loops
-# --------------------------
-def train_one_epoch(model, diffusion, loader, opt, device):
-    model.train()
-    total = 0.0
-    for forces, joints in tqdm(loader, desc="Train"):
-        forces = forces.to(device)    # [B,L,F]
-        joints = joints.to(device)    # [B,L,J]
-        B = forces.size(0)
-        t = torch.randint(0, diffusion.T, (B,), device=device).long()#randomly picks a timestep t between 0 and T (noise strength)
-        x_t, noise = diffusion.add_noise(joints, t)  #Adds the right amount of Gaussian noise to the ground-truth joints depending on t
-        pred = model(x_t, forces, t)                  # predict noise
-        loss = F.mse_loss(pred, noise)
+        # Prédiction du bruit par le modèle
+        # t est normalisé entre 0 et 1 pour le Transformer
+        t_tensor = torch.full((x_t.shape[0],), t / self.n_steps, device=self.device)
+        eps_theta = model(x_t, t_tensor, cond)
+        
+        # Équation DDPM pour x_{t-1}
+        mean = (1 / torch.sqrt(alpha_t)) * (
+            x_t - (beta_t / torch.sqrt(1 - alpha_bar_t)) * eps_theta
+        )
+        sigma = torch.sqrt(beta_t)
+        
+        return mean + sigma * z
 
-        opt.zero_grad(); loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step()
-        total += loss.item()
-    return total / len(loader)
+# ==========================================
+# 1. DATASET ET GESTION DES STATS
+# ==========================================
+class BiomechDiffusionDataset(Dataset):
+    def __init__(self, file_list, window_size=128, stats=None):
+        self.samples = []
+        for f_path, j_path in file_list:
+            f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
+            for i in range(0, len(f_data) - window_size, window_size // 2):
+                self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
+        self.stats = stats
 
+    def __len__(self): return len(self.samples)
 
+    def __getitem__(self, idx):
+        f, j = self.samples[idx]
+        f, j = torch.from_numpy(f), torch.from_numpy(j)
+        if self.stats:
+            f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
+            j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
+        return f, j
 
-@torch.no_grad()
-def evaluate_simple(model, diffusion, loader, device):
+def compute_and_save_stats(file_list, save_path):
+    print("\n[INFO] Calcul des scalers sur le Train Set...")
+    all_f, all_j = [], []
+    for f_p, j_p in file_list:
+        all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
+    f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
+    stats = {
+        'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
+        'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0)
+    }
+    serializable_stats = {k: v.tolist() for k, v in stats.items()}
+    with open(save_path, 'w') as f:
+        json.dump(serializable_stats, f)
+    return {k: torch.tensor(v).float() for k, v in stats.items()}
+
+# ==========================================
+# 2. ARCHITECTURE
+# ==========================================
+class DiffusionTransformer(nn.Module):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        self.joint_embed = nn.Linear(joint_dim, embed_dim)
+        self.force_embed = nn.Linear(force_dim, embed_dim)
+        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim))
+        layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
+        self.output_layer = nn.Linear(embed_dim, joint_dim)
+
+    def forward(self, x, t, cond):
+        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb
+        return self.output_layer(self.transformer(x_emb))
+
+# ==========================================
+# 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
+# ==========================================
+def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=128, stride=64):
     model.eval()
-    total = 0.0
-    for forces, joints in tqdm(loader, desc="Val"):
-        forces = forces.to(device)
-        joints = joints.to(device)
-        B = forces.size(0)
-        t = torch.randint(0, diffusion.T, (B,), device=device).long() #randomly picks a timestep t between 0 and T (noise strength)
-        x_t, noise = diffusion.add_noise(joints, t) #Adds the right amount of Gaussian noise to the ground-truth joints depending on t
-        pred = model(x_t, forces, t)
-        loss = F.mse_loss(pred, noise)
-        total += loss.item()
-    return total / len(loader)
-
-@torch.no_grad()
-def evaluate(model, diffusion, loader, device, max_joints=12, samples_per_batch=1):
-    model.eval()
-    total = 0.0
-    collected = []  # liste d'items { 'gt', 'noisy', 'true_noise', 'pred_noise', 'x0_pred', 'timestep', 'batch_idx' }
-
-    for bidx, (forces, joints) in enumerate(tqdm(loader, desc="Val")):
-        forces = forces.to(device)
-        joints = joints.to(device)
-        B = forces.size(0)
-
-        # Tirage t sur tout l’espace (fidèle à l’entraînement)
-        t = torch.randint(0, diffusion.T, (B,), device=device).long()
-
-        x_t, noise = diffusion.add_noise(joints, t)
-        pred = model(x_t, forces, t)
-        loss = F.mse_loss(pred, noise)
-        total += loss.item()
-
-        # Reconstruit x0 pour inspection
-        x0_pred = reconstruct_x0_from_pred(x_t, pred, t, diffusion, device)
-
-        # On sélectionne quelques séquences par batch pour visualisation
-        take = min(samples_per_batch, B)
-        idxs = torch.arange(take, device=device)
-
-        # En CPU + numpy (pas de graph, faible mémoire)
-        gt_np         = joints[idxs].detach().cpu().numpy()
-        noisy_np      = x_t[idxs].detach().cpu().numpy()
-        true_noise_np = noise[idxs].detach().cpu().numpy()
-        pred_noise_np = pred[idxs].detach().cpu().numpy()
-        x0_pred_np    = x0_pred[idxs].detach().cpu().numpy()
-        t_np          = t[idxs].detach().cpu().tolist()
-
-        collected.append({
-            "gt": gt_np, "noisy": noisy_np, "true_noise": true_noise_np,
-            "pred_noise": pred_noise_np, "x0_pred": x0_pred_np,
-            "timesteps": t_np, "batch_idx": bidx
-        })
-
-    return total / len(loader), collected
-# --------------------------
-# Main
-# --------------------------
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, required=True)
-    parser.add_argument("--sequence_length", type=int, default=10)
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--hidden_size", type=int, default=128)
-    parser.add_argument("--num_layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.2)
-    parser.add_argument("--bidirectional", action="store_true", default=False)
-    parser.add_argument("--time_dim", type=int, default=128)
-    parser.add_argument("--timesteps", type=int, default=1000)
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--lr", type=float, default=2e-4)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--normalize", action="store_true", default=True)
-    parser.add_argument("--test_ratio", type=float, default=0.2)
-    parser.add_argument("--exclude_subject", type=str, default="Jovana")
-    parser.add_argument("--scaler_dir", type=str, default="./scalers_diff")
-    parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--sample_steps", type=int, default=50)
-    parser.add_argument("--use_film", action="store_true", default=True)
-    args = parser.parse_args()
-
-    # Build loaders (note: diffusion likes normalized targets)
-    train_ds, val_ds, train_loader, val_loader, Fd, Jd, train_subs, test_subs = build_loaders_shared(
-        data_dir=args.data_dir,
-        seq_len=args.sequence_length,
-        stride_train=args.stride,
-        stride_val=args.sequence_length,   # disjoint val
-        batch_size=args.batch_size,
-        normalize=args.normalize,
-        scaler_dir=args.scaler_dir,
-        test_ratio=args.test_ratio,
-        exclude_subjects=[args.exclude_subject],
-        num_workers=args.num_workers,
-        scale_forces=True,
-        scale_joints=True,   
-    )
-
-    print(f"Training subjects: {train_subs}")
-    print(f"Testing subjects:  {test_subs}")
-    print(f"Training sequences: {len(train_ds)} | Validation sequences: {len(val_ds)}")
-
-    model = LSTMDiffusionDenoiser(
-        joint_dim=Jd,
-        cond_dim=Fd,
-        hidden_size=args.hidden_size,
-        num_layers=args.num_layers,
-        dropout=args.dropout,
-        bidirectional=args.bidirectional,
-        time_dim=args.time_dim,
-        use_film=args.use_film
-    ).to(args.device)
-
-
-    diffusion = Diffusion(timesteps=args.timesteps, beta_schedule="cosine")
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
-
-    best = float("inf")
-    ckpt_dir = Path("./checkpoints_diff"); ckpt_dir.mkdir(exist_ok=True)
-    ckpt_path = ckpt_dir / "best_diffusion_lstm.pth"
-
-    for epoch in range(1, args.epochs+1):
-        print(f"\nEpoch {epoch}/{args.epochs}")
-        tr = train_one_epoch(model, diffusion, train_loader, opt, args.device)
-        va = evaluate_simple(model, diffusion, val_loader, args.device)
-
-        print(f"train_loss={tr:.6f} | val_loss={va:.6f}")
-        if va < best:
-            best = va
-            torch.save({
-                "epoch": epoch,
-                "state_dict": model.state_dict(),
-                "opt": opt.state_dict(),
-                "config": vars(args),
-                "dims": {"F": Fd, "J": Jd}
-            }, ckpt_path)
-            print("✓ Saved best")
+    f_raw = np.load(f_path).astype(np.float32)
+    j_raw = np.load(j_path).astype(np.float32)
     
-    print("\nLoading best checkpoint for final evaluation & visualization...")
-    ckpt = torch.load(ckpt_path, map_location=args.device)
-    model.load_state_dict(ckpt["state_dict"])
-    model.to(args.device)
+    f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+    
+    T = f_norm.shape[0]
+    full_pred = torch.zeros((T, 12)).to(device)
+    count_map = torch.zeros((T, 12)).to(device)
 
-    final_val_loss, collected = evaluate(
-        model, diffusion, val_loader, args.device,
-        max_joints=12,        
-        samples_per_batch=1   
-    )
-    print(f"Final best-model val_loss={final_val_loss:.6f}")
+    print(f"  [INF] Sampling trial complet ({T} frames)...")
+    
+    for start in range(0, T - window_size, stride):
+        end = start + window_size
+        f_win = f_norm[start:end].unsqueeze(0).to(device)
+        
+        curr_j = torch.randn((1, window_size, 12)).to(device)
+        
+        # Reverse Diffusion avec DDPM (sur 50 steps pour plus de vitesse en inférence)
+        inference_steps = 50 
+        step_size = ddpm.n_steps // inference_steps
+        
+        for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
+            with torch.no_grad():
+                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+        
+        full_pred[start:end] += curr_j.squeeze(0)
+        count_map[start:end] += 1.0
 
-    viz_dir = "./viz_diff_best"
-    Path(viz_dir).mkdir(exist_ok=True, parents=True)
-    visualize_collected(collected, max_joints=12, save_dir=viz_dir, prefix="val_best", epoch=ckpt["epoch"])
-    print(f"✓ Saved visualizations to {viz_dir}")
+    final_pred = full_pred / torch.clamp(count_map, min=1.0)
+    final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
+    return j_raw, final_pred.numpy()
+
+# ==========================================
+# 4. RUN EXPERIMENT
+# ==========================================
+def run_experiment():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    data_root = Path("./processed_data")
+
+    results_dir = Path("results")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
+
+    train_subs = task_subs[:11] + squat_subs[:4]
+    val_subs = task_subs[11:14] + squat_subs[4:5]
+    test_subs = task_subs[14:] + squat_subs[5:]
+
+    print(f"\n[SPLIT SUMMARY]")
+    print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")
+    print(f"VAL   ({len(val_subs)} sujets): {[s.name for s in val_subs]}")
+    print(f"TEST  ({len(test_subs)} sujets): {[s.name for s in test_subs]}")
+    print(f"{'='*30}")
+
+    # def get_pairs(subs):
+    #     p = []
+    #     for s in subs:
+    #         for t in s.iterdir():
+    #             f = t/"forces_300.npy" if (t/"forces_300.npy").exists() else t/"forces.npy"
+    #             j = t/"joints.npy"
+    #             if f.exists() and j.exists(): p.append((f, j))
+    #     return p
+
+    def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "forces.npy"  # On cible uniquement le 100Hz
+                    j = t / "joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 
-    # --- Quick sample demo on a validation batch ---
-    # model.eval()
-    # with torch.no_grad():
-    #     forces, joints = next(iter(val_loader))
-    #     forces = forces.to(args.device)
-    #     joints = joints.to(args.device)
+    train_pairs = get_pairs(train_subs)
+    stats = compute_and_save_stats(train_pairs, results_dir /"scalers.json")
+    
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
-    #     print("forces mean/std:", forces.mean().item(), forces.std().item())
-    #     print("joints mean/std:", joints.mean().item(), joints.std().item())
+    # Initialisation DDPM
+    ddpm = DDPM(device, n_steps=1000)
+    model = DiffusionTransformer().to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=2e-4)
+    train_losses, val_losses = [], []
 
-    #     samples = diffusion.sample_with_visualization(
-    #         model, forces,joints,visualise=True, steps=args.sample_steps, eta=0.0, device=args.device
-    #     )  # [B,L,J]
+    epochs = 1
+    print(f"\n[START] Entraînement DDPM...")
+    for epoch in range(epochs):
+        model.train()
+        t_loss = 0
+        for f, j in train_loader:
+            f, j = f.to(device), j.to(device)
+            
+            # DDPM Step sampling
+            t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
+            noise = torch.randn_like(j)
+            j_noisy = ddpm.sample_forward(j, t, noise)
+            
+            optimizer.zero_grad()
+            # On normalise t pour le modèle (0 à 1)
+            pred_noise = model(j_noisy, t.float() / ddpm.n_steps, f)
+            loss = nn.MSELoss()(pred_noise, noise)
+            loss.backward(); optimizer.step()
+            t_loss += loss.item()
+        
+        model.eval()
+        v_loss = 0
+        with torch.no_grad():
+            for f, j in val_loader:
+                f, j = f.to(device), j.to(device)
+                t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
+                noise = torch.randn_like(j)
+                j_noisy = ddpm.sample_forward(j, t, noise)
+                v_loss += nn.MSELoss()(model(j_noisy, t.float() / ddpm.n_steps, f), noise).item()
+        
+        train_losses.append(t_loss/len(train_loader))
+        val_losses.append(v_loss/len(val_loader))
+        print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
 
-    #     # If normalized, inverse-transform for inspection
-    #     if args.normalize:
-    #         with open(Path(args.scaler_dir) / "joint_scaler.pkl", "rb") as f:
-    #             jscaler: StandardScaler = pickle.load(f)
+    torch.save(model.state_dict(), results_dir /"diffusion_biomech_model.pth")
 
-    #         B, L, J = samples.shape
-    #         preds = samples.detach().cpu().numpy().reshape(-1, J)
-    #         preds = jscaler.inverse_transform(preds).reshape(B, L, J)
+    # --- INFERENCE SUR TEST (FENÊTRE) ---
+    print("[INF] Génération d'un exemple de test...")
+    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
+    f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
+    f_in = f_in.unsqueeze(0).to(device)
+    
+    curr_j = torch.randn((1, 128, 12)).to(device)
+    for t_idx in reversed(range(ddpm.n_steps)):
+        with torch.no_grad():
+            curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_in)
 
-    #         gt = joints.detach().cpu().numpy().reshape(-1, J)
-    #         gt = jscaler.inverse_transform(gt).reshape(B, L, J)
-    #     else:
-    #         preds = samples.detach().cpu().numpy()
-    #         gt = joints.detach().cpu().numpy()
+    pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
+    ref = (j_ref * stats['j_s']) + stats['j_m']
 
-    #     # --- Plot ground truth vs prediction---
-    # b = 0  # pick first sample
-    # num_joints_to_plot = min(12, preds.shape[-1])  # up to 12 joints
-    # fig, axes = plt.subplots(num_joints_to_plot // 3, 3, figsize=(14, 10))
-    # axes = axes.flatten()
+    fig, axes = plt.subplots(4, 3, figsize=(15, 12))
+    for i, ax in enumerate(axes.flatten()):
+        ax.plot(ref[:, i], 'k--', label='Ref'); ax.plot(pred[:, i], 'r', label='Pred')
+        ax.set_title(f"Joint {i+1}"); ax.legend()
+    plt.tight_layout(); plt.savefig(results_dir /"inference_test.png"); plt.close()
 
-    # for j in range(num_joints_to_plot):
-    #     ax = axes[j]
-    #     ax.plot(gt[b, :, j], label="True", lw=0.8)
-    #     ax.plot(preds[b, :, j], label="Pred", lw=0.8, alpha=0.8)
-    #     ax.set_title(f"Joint {j}")
-    #     ax.legend(fontsize=7)
-    #     ax.grid(True)
+    # --- INFERENCE COMPLÈTE ---
+    print("\n[INF] Inférence sur un essai COMPLET...")
+    test_pairs = get_pairs(test_subs)
+    random_trial = random.choice(test_pairs)
+    ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
 
-    # for ax in axes[num_joints_to_plot:]:
-    #     ax.axis("off")
-
-    # plt.suptitle(f"Diffusion | Val sample #{b} | steps={args.sample_steps}")
-    # plt.tight_layout()
-    # plt.savefig('pred_vs_gt.png')
+    fig, axes = plt.subplots(4, 3, figsize=(18, 14))
+    for i, ax in enumerate(axes.flatten()):
+        ax.plot(ref_full[:, i], 'k--', alpha=0.6, label='Reference')
+        ax.plot(pred_full[:, i], 'r', label='DDPM Pred')
+        ax.set_title(f"Joint {i+1}")
+        if i == 0: ax.legend()
+    plt.suptitle(f"Full Trial DDPM Inference: {random_trial[0].parent.name}", fontsize=16)
+    plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference.png"); plt.close()
+    
+    plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
+    plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve.png"); plt.close()
+    print(f"\n[FINISH] Résultats sauvegardés.")
 
 if __name__ == "__main__":
-    main()
-
-
-
-
-
-    # @torch.no_grad()
-    # def sample_test(self, model:LSTMDiffusionDenoiser, cond:torch.Tensor, steps:int=50, eta:float=0.0, device="cuda"):
-    #     """
-    #     DDIM sampling (deterministic if eta=0).
-    #     cond: [B, L, F]  -> returns x_0: [B, L, J]
-    #     """
-    #     B, L, Fd = cond.shape
-    #     J = model.joint_dim
-    #     x = torch.randn(B, L, J, device=device) #initial noise
-
-    #     start = int(self.T * 0.999) 
-    #     ts = torch.linspace(start, 0, steps, dtype=torch.long, device=device) #timesteps
-    #     a_bar, alphas = self._buffers(device)
-
-    #     eps_ = 1e-5 ####
-
-    #     for i in range(steps):
-    #         t = ts[i].repeat(B)
-    #         eps = model(x, cond, t) # predict noise
-    #         # a_t = a_bar[t].view(B, 1, 1)
-    #         a_t = a_bar[t].view(B,1,1).clamp(eps_, 1 - eps_)  
-    #         x0_pred = (x - torch.sqrt(1 - a_t) * eps) / torch.sqrt(a_t)
-
-    #         if i % 5 == 0 or i == steps-1:
-    #             print(f"[DDIM] step {i:02d} | x.std={x.std().item():.3f} "
-    #                 f"| eps.std={eps.std().item():.3f} | x0_pred.std={x0_pred.std().item():.3f} "
-    #                 f"| a_t={a_t.mean().item():.6f}")
-
-    #         if i < steps - 1:
-    #             t_next = ts[i+1].repeat(B)
-    #             # a_prev = a_bar[t_next].view(B, 1, 1)
-    #             a_prev = a_bar[t_next].view(B,1,1).clamp(eps_, 1 - eps_)
-    #         else:
-    #             a_prev = torch.ones_like(a_t)
-
-    #         if eta == 0.0:
-    #             # deterministic DDIM
-    #             x = torch.sqrt(a_prev) * x0_pred + torch.sqrt(1 - a_prev) * eps
-    #         else:
-    #             # stochastic DDIM (proper variance)
-    #             sigma_t = eta * torch.sqrt((1 - a_prev) / (1 - a_t)) * torch.sqrt(1 - a_t / a_prev)
-    #             z = torch.randn_like(x)
-    #             x = torch.sqrt(a_prev) * x0_pred + torch.sqrt(1 - a_prev - sigma_t**2) * eps + sigma_t * z
-
-    #     return x
+    run_experiment()

@@ -96,7 +96,7 @@ def read_mks_data(data_markers, start_sample=0, converter = 1.0):
         dict: A dictionary representing the markers and their 3D coordinates for the specified start_sample.
     """
     # Extract marker column names
-    marker_columns = [col[:-2] for col in data_markers.columns if col.endswith("_x")]
+    marker_columns = [col[:-2] for col in data_markers.columns if col.endswith("_X")]
     
     # Initialize the result list
     result_markers = []
@@ -105,9 +105,9 @@ def read_mks_data(data_markers, start_sample=0, converter = 1.0):
     for _, row in data_markers.iterrows():
         frame_dict = {}
         for marker in marker_columns:
-            x = row[f"{marker}_x"] / converter  #convert to m
-            y = row[f"{marker}_y"]/ converter
-            z = row[f"{marker}_z"]/ converter
+            x = row[f"{marker}_X"] / converter  #convert to m
+            y = row[f"{marker}_Y"]/ converter
+            z = row[f"{marker}_Z"]/ converter
             frame_dict[marker] = np.array([x, y, z])  # Store as a NumPy array
         result_markers.append(frame_dict)
     

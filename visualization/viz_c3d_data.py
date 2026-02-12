@@ -14,8 +14,8 @@ import meshcat_shapes
 import ezc3d
 import meshcat.geometry as g
 
-trial = "subject01"
-task = "beam"
+trial = "subject03"
+task = "static2"
 # === Paths ===
 c3d_path = f"/home/kchalabi/Documents/THESE/datasets_kinetics/Anais/{trial}_{task}.c3d" # os.path.join(input_dir, file)
 c3d = ezc3d.c3d(c3d_path)
@@ -27,7 +27,7 @@ corners_fp2 = corners_all[:, :, 1]
 
 # /home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/subject01/beam_markers.csv
 mks_csv = f"DATA/Anais/{trial}/{task}/markers.csv"
-cop_csv = f"DATA/Anais/{trial}/{task}/kinetics.csv"  # <-- X1 Y1 Z1 X2 Y2 Z2
+cop_csv = f"DATA/Anais/{trial}/{task}/kinetics_filtered.csv"  # <-- X1 Y1 Z1 X2 Y2 Z2
 
 # === Units ===
 # Ton code mks utilise converter=1000.0 => mks en mm -> sortie en m.
@@ -99,8 +99,8 @@ def safe_place(node_name, pos3):
     p[2] = p[2] + Z_EPS
     place(vis, node_name, p)
 # COP nodes (couleurs distinctes)
-add_sphere(vis, "world/COP_right",  radius=0.015, color=0x00aaFF)  # bleu clair
-add_sphere(vis, "world/COP_left", radius=0.015, color=0xFF8800)  # orange
+add_sphere(vis, "world/COP_left",  radius=0.015, color=0x00aaFF)  # bleu clair
+add_sphere(vis, "world/COP_right", radius=0.015, color=0xFF8800)  # orange
 
 FORCE_SCALE = 0.001  # Ajuste selon la taille voulue (0.001 signifie 1000N = 1m)
 F_THRESHOLD = 20     # Seuil en Newtons pour afficher la flèche
@@ -150,40 +150,40 @@ for i in range(n_frames):
         place(vis,name, pos)
 
     # COPs
-    safe_place("COP_right",  cop1[i])
-    safe_place("COP_left", cop2[i])
+    safe_place("COP_left",  cop1[i])
+    safe_place("COP_right", cop2[i])
 
     p_start1 = cop1[i]
     f1 = forces1[i]
     if not np.any(np.isnan(p_start1)) and abs(f1[2]) > F_THRESHOLD:
-        safe_place("COP_right", p_start1)
+        safe_place("COP_left", p_start1)
         # Calcul du point d'arrivée : départ + (vecteur force * scale)
         # Note : on utilise "-" car Fz est souvent négatif dans le C3D (Action)
         # Si la flèche va vers le bas, change le "-" en "+"
         p_end1 = p_start1 + (f1 * FORCE_SCALE) 
         
         verts1 = np.array([p_start1, p_end1]).T.astype(np.float32)
-        vis["world/GRF_right"].set_object(g.LineSegments(
+        vis["world/GRF_left"].set_object(g.LineSegments(
             g.PointsGeometry(verts1), g.LineBasicMaterial(color=0x00aaFF)
         ))
     else:
-        place(vis, "COP_right", [0, 0, -10]) # On cache sous le sol
-        vis["world/GRF_right"].set_object(g.LineSegments(g.PointsGeometry(np.zeros((3, 2)))))
+        place(vis, "COP_left", [0, 0, -10]) # On cache sous le sol
+        vis["world/GRF_left"].set_object(g.LineSegments(g.PointsGeometry(np.zeros((3, 2)))))
 
     # --- Gestion COP et GRF 2 (Left dans ton code) ---
     p_start2 = cop2[i]
     f2 = forces2[i]
     if not np.any(np.isnan(p_start2)) and abs(f2[2]) > F_THRESHOLD:
-        safe_place("COP_left", p_start2)
+        safe_place("COP_right", p_start2)
         p_end2 = p_start2 + (f2 * FORCE_SCALE)
         
         verts2 = np.array([p_start2, p_end2]).T.astype(np.float32)
-        vis["world/GRF_left"].set_object(g.LineSegments(
+        vis["world/GRF_right"].set_object(g.LineSegments(
             g.PointsGeometry(verts2), g.LineBasicMaterial(color=0xFF8800)
         ))
     else:
-        place(vis, "COP_left", [0, 0, -10])
-        vis["world/GRF_left"].set_object(g.LineSegments(g.PointsGeometry(np.zeros((3, 2)))))
+        place(vis, "COP_right", [0, 0, -10])
+        vis["world/GRF_right"].set_object(g.LineSegments(g.PointsGeometry(np.zeros((3, 2)))))
         
 
     for i_fp, fp in enumerate(all_corners, start=1):

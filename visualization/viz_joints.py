@@ -14,7 +14,7 @@ from utils.utils import read_mks_data
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vincent/Trial112_joints.csv"
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/subject01/bend/joints.csv"
 q_ref_df = pd.read_csv(path_joint).iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 urdf_name = "human.urdf"
