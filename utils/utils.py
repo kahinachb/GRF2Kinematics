@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from utils.linear_algebra_utils import col_vector_3D, transform_to_global_frame,transform_to_local_frame
 import yaml
+from model_utils import get_virtual_pelvis_pose
 
 def to_utc(s: pd.Series) -> pd.Series:
     return s.dt.tz_localize("UTC") if s.dt.tz is None else s.dt.tz_convert("UTC")

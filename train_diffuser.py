@@ -7,55 +7,10 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
+from utils.model_utils import DDPM 
 
 # ==========================================
-# 0. CLASSE DDPM (Gestion du Forward/Reverse)
-# ==========================================
-class DDPM:
-    def __init__(self, device, n_steps=1000, min_beta=1e-4, max_beta=0.02):
-        self.n_steps = n_steps
-        self.device = device
-        self.betas = torch.linspace(min_beta, max_beta, n_steps).to(device)
-        self.alphas = 1.0 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        
-        # Pour le Forward
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
-
-    def sample_forward(self, x_0, t, noise):
-        """Forward Diffusion: q(x_t | x_0)"""
-        return (
-            self.sqrt_alphas_cumprod[t].view(-1, 1, 1) * x_0 +
-            self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1) * noise
-        )
-
-    def sample_reverse(self, model, x_t, t, cond):
-        """Reverse Diffusion Step: p(x_{t-1} | x_t, cond)"""
-        if t == 0:
-            z = 0
-        else:
-            z = torch.randn_like(x_t)
-            
-        beta_t = self.betas[t]
-        alpha_t = self.alphas[t]
-        alpha_bar_t = self.alphas_cumprod[t]
-        
-        # Prédiction du bruit par le modèle
-        # t est normalisé entre 0 et 1 pour le Transformer
-        t_tensor = torch.full((x_t.shape[0],), t / self.n_steps, device=self.device)
-        eps_theta = model(x_t, t_tensor, cond)
-        
-        # Équation DDPM pour x_{t-1}
-        mean = (1 / torch.sqrt(alpha_t)) * (
-            x_t - (beta_t / torch.sqrt(1 - alpha_bar_t)) * eps_theta
-        )
-        sigma = torch.sqrt(beta_t)
-        
-        return mean + sigma * z
-
-# ==========================================
-# 1. DATASET ET GESTION DES STATS
+# 1. DATASET 
 # ==========================================
 class BiomechDiffusionDataset(Dataset):
     def __init__(self, file_list, window_size=128, stats=None):
@@ -209,7 +164,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data")
 
-    results_dir = Path("results")
+    results_dir = Path("results_test")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
@@ -251,6 +206,7 @@ def run_experiment():
 
 
     train_pairs = get_pairs(train_subs)
+    print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
@@ -258,8 +214,8 @@ def run_experiment():
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
-    # model = DiffusionTransformer().to(device)
-    model = DiffusionTransformerConcat().to(device)
+    model = DiffusionTransformer().to(device)
+    # model = DiffusionTransformerConcat().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
@@ -323,6 +279,7 @@ def run_experiment():
     print("\n[INF] Inférence sur un essai COMPLET...")
     test_pairs = get_pairs(test_subs)
     random_trial = random.choice(test_pairs)
+    print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
 
     fig, axes = plt.subplots(4, 3, figsize=(18, 14))

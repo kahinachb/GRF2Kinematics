@@ -1,272 +1,247 @@
-#!/usr/bin/env python3
-"""
-Inference and Visualization (Diffusion + LSTM denoiser)
-- Imports model + diffusion from training code
-- Uses shared scalers saved during training
-- Modes:
-  1) sliding-last-step: predict only the last frame of each L-window (stride=1)
-  2) batch-seq: sample full sequences with the same slicing as training
-"""
-
-import argparse
-import pickle
-from pathlib import Path
-from typing import Dict, Tuple, List
-
-import numpy as np
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import json
+from utils.diffuser_utils import DDPM
 
-from train_diffuser import LSTMDiffusionDenoiser, Diffusion 
-from loader_utils import slice_trial_into_sequences  
-from inference_utils import *
 
-# ==========================
-# Diffusion Inference
-# ==========================
-class DiffusionInference:
-    def __init__(self,
-                 ckpt_path: str = "./checkpoints_diff/best_diffusion_lstm.pth",
-                 scaler_dir: str = "./scalers_diff",
-                 device: str = "cuda" if torch.cuda.is_available() else "cpu",
-                 sample_steps: int = 50,
-                 eta: float = 0.0):
-        """
-        Args:
-            ckpt_path: path to diffusion checkpoint saved by training script
-            scaler_dir: folder containing force_scaler.pkl and joint_scaler.pkl
-            device: cpu / cuda
-            sample_steps: DDIM steps
-            eta: DDIM stochasticity (0 = deterministic)
-        """
-        self.device = device
-        self.sample_steps = sample_steps
-        self.eta = eta
-
-        self.model, self.config, self.FdJd = self._load_model(ckpt_path)
-        self.force_scaler, self.joint_scaler = self._load_scalers(scaler_dir)
-        self.diffusion = Diffusion(
-            timesteps=self.config.get("timesteps", 1000),
-            beta_schedule="linear"
+class DiffusionTransformer(torch.nn.Module):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        self.joint_embed = torch.nn.Linear(joint_dim, embed_dim)
+        self.force_embed = torch.nn.Linear(force_dim, embed_dim)
+        self.time_embed = torch.nn.Sequential(
+            torch.nn.Linear(1, embed_dim), 
+            torch.nn.SiLU(), 
+            torch.nn.Linear(embed_dim, embed_dim)
         )
+        layer = torch.nn.TransformerEncoderLayer(
+            d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True
+        )
+        self.transformer = torch.nn.TransformerEncoder(layer, num_layers=num_layers)
+        self.output_layer = torch.nn.Linear(embed_dim, joint_dim)
 
-        self.joint_names = JOINT_NAMES
-        self.force_names = FORCE_NAMES
+    def forward(self, x, t, cond):
+        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb
+        return self.output_layer(self.transformer(x_emb))
 
-    # ----- IO -----
-    def _load_model(self, ckpt_path: str):
-        ckpt = torch.load(ckpt_path, map_location=self.device)
-        cfg = ckpt.get("config", {})
-        dims = ckpt.get("dims", {})
-        Fd = int(dims["F"])
-        Jd = int(dims["J"])
-        print(cfg)
 
-        model = LSTMDiffusionDenoiser(
-            joint_dim=Jd,
-            cond_dim=Fd,
-            hidden_size=cfg.get("hidden_size", 128),
-            num_layers=cfg.get("num_layers", 2),
-            dropout=cfg.get("dropout", 0.2),
-            bidirectional=cfg.get("bidirectional", False),
-            time_dim=cfg.get("time_dim", 128),
-            use_film=cfg.get("use_film", True)
-        ).to(self.device)
-        model.load_state_dict(ckpt["state_dict"])
-        model.eval()
+# ==========================================
+# 2. INFERENCE FUNCTION
+# ==========================================
 
-        print(f"Loaded diffusion denoiser. hparams={cfg} | dims={dims}")
-        return model, cfg, (Fd, Jd)
+def predict_full_trial(model, ddpm, f_path, j_path, stats, device, 
+                       window_size=128, stride=64, inference_steps=50):
+    """
+    Generate predictions for a full trial using sliding windows.
+    
+    Args:
+        model: Trained DiffusionTransformer
+        ddpm: DDPM object
+        f_path: Path to forces.npy file
+        j_path: Path to joints.npy file (ground truth for comparison)
+        stats: Dictionary with normalization statistics
+        device: torch device
+        window_size: Size of prediction window (default 128)
+        stride: Step size between windows (default 64)
+        inference_steps: Number of denoising steps (default 50)
+    
+    Returns:
+        j_raw: Ground truth joint angles
+        pred_full: Predicted joint angles
+    """
+    model.eval()
+    
+    # Load data
+    f_raw = np.load(f_path).astype(np.float32)
+    j_raw = np.load(j_path).astype(np.float32)
+    
+    # Normalize forces
+    f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+    
+    T = f_norm.shape[0]
+    full_pred = torch.zeros((T, 12)).to(device)
+    count_map = torch.zeros((T, 12)).to(device)
 
-    def _load_scalers(self, scaler_dir: str):
-        scaler_dir = Path(scaler_dir)
-        fsc = jsc = None
-        fpath = scaler_dir / "force_scaler.pkl"
-        jpath = scaler_dir / "joint_scaler.pkl"
-        if fpath.exists():
-            with open(fpath, "rb") as f:
-                fsc = pickle.load(f)
-            print(f"Loaded force scaler: {fpath}")
-        else:
-            print("WARNING: force scaler not found (proceeding without).")
-        if jpath.exists():
-            with open(jpath, "rb") as f:
-                jsc = pickle.load(f)
-            print(f"Loaded joint scaler: {jpath}")
-        else:
-            print("WARNING: joint scaler not found (outputs will remain normalized).")
-        return fsc, jsc
-
-    # ----- core sampling -----
-    @torch.no_grad()
-    def _sample_window(self, forces_win: np.ndarray,y_true_window) -> np.ndarray:
-        """
-        forces_win: [L, F] in original units.
-        Returns:
-            pred_joints: [L, J] (inverse-transformed if scaler available)
-        """
-        x = forces_win.astype(np.float32)
-        y = y_true_window.astype(np.float32)
-        if self.force_scaler is not None:
-            x = self.force_scaler.transform(x)
+    print(f"  [INFO] Predicting trial with {T} frames...")
+    print(f"  [INFO] Using window_size={window_size}, stride={stride}")
+    
+    num_windows = 0
+    for start in range(0, T - window_size, stride):
+        end = start + window_size
+        f_win = f_norm[start:end].unsqueeze(0).to(device)
         
-        if self.joint_scaler is not None:
-            y = self.force_scaler.transform(y)
-
-        xt = torch.from_numpy(x).unsqueeze(0).to(self.device)  # [1, L, F]
-        yt = torch.from_numpy(x).unsqueeze(0).to(self.device)
-
-        # samples = sample_from_gt_with_visualization(
-        # self.model, self.diffusion, xt, yt)
+        # Start from pure noise
+        curr_j = torch.randn((1, window_size, 12)).to(device)
         
-        samples = self.diffusion.sample_with_visualization(
-            model=self.model,
-            cond=xt,
-            y =yt,
-            steps=self.sample_steps,
-            eta=self.eta,
-            device=self.device
-        )  # [1, L, J] in normalized joint space
-        print("norm mean/std:", samples.mean().item(), samples.std().item())  # should be O(1)
-
-        arr = samples.squeeze(0).cpu().numpy()  # [L, J]
-
-        if self.joint_scaler is not None:
-            L, J = arr.shape
-            arr = self.joint_scaler.inverse_transform(arr.reshape(-1, J)).reshape(L, J)
-
-        return arr
-
-    def predict_sequence(self, forces_seq: np.ndarray) -> np.ndarray:
-        """
-        Sample a full sequence (L, F) -> (L, J) with DDIM.
-        """
-        return self._sample_window(forces_seq)
-
-    def predict_last_frame(self, forces_window: np.ndarray,y_true_window) -> np.ndarray:
-        """
-        Sample a window (L, F) -> (J,), returning ONLY the LAST FRAME
-        """
-        y_full = self._sample_window(forces_window,y_true_window)  # [L, J]
-        return y_full[-1]                             # [J]
-
-    def run_sliding_last_step(self,
-                              forces: np.ndarray,
-                              joints: np.ndarray,
-                              seq_len: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Sliding window with stride=1, predicting the last frame each time.
-        Returns:
-            y_true_aligned: [T - L + 1, J]
-            y_pred_aligned: [T - L + 1, J]
-        """
-        T_j = len(joints)
-        T_f = len(forces)
-        if T_j == T_f:
-            T=T_j
-        else: 
-            print("shape issues")
-        forces = forces[:]
-        joints = joints[:]
-
-        preds = []
-        for i in range(seq_len - 1, T):
-            window = forces[i - seq_len + 1 : i + 1]      # [L, F]
-            y_true_window = joints[i - seq_len + 1 : i + 1]
-            y_last = self.predict_last_frame(window,y_true_window)   
-            preds.append(y_last)
-        y_pred = np.vstack(preds)                         # [T-L+1, J]
-        y_true = joints[seq_len - 1 : ]                   # [T-L+1, J]
-  
-
-        return y_true, y_pred
-
-    def run_batch_seq(self,
-                      forces: np.ndarray,
-                      joints: np.ndarray,
-                      seq_len: int,
-                      stride: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Predict full sequences using the same slicing as training:
-        - windows of length seq_len
-        - sliding with stride
-        Concats predictions & targets in temporal order.
-        """
-        seqs = slice_trial_into_sequences(forces, joints, seq_len, stride)
-        y_true_list, y_pred_list = [], []
-        for s in seqs:
-            f = s["forces"]  # [L, F]
-            j = s["joints"]  # [L, J]
-            y = self.predict_sequence(f)
-            y_true_list.append(j)
-            y_pred_list.append(y)
-        y_true = np.concatenate(y_true_list, axis=0) if y_true_list else np.zeros((0, joints.shape[1]))
-        y_pred = np.concatenate(y_pred_list, axis=0) if y_pred_list else np.zeros((0, joints.shape[1]))
-        return y_true, y_pred
+        # Reverse diffusion
+        step_size = ddpm.n_steps // inference_steps
+        
+        for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
+            with torch.no_grad():
+                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+        
+        # Accumulate predictions
+        full_pred[start:end] += curr_j.squeeze(0)
+        count_map[start:end] += 1.0
+        num_windows += 1
+    
+    print(f"  [INFO] Processed {num_windows} windows")
+    
+    # Average overlapping predictions
+    final_pred = full_pred / torch.clamp(count_map, min=1.0)
+    
+    # Denormalize
+    final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
+    
+    return j_raw, final_pred.numpy()
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Inference for Diffusion LSTM using shared utils")
-    ap.add_argument("--ckpt_path", type=str, default="./checkpoints_diff/best_diffusion_lstm.pth")
-    ap.add_argument("--data_dir", type=str, required=True)
-    ap.add_argument("--subject", type=str, required=True)
-    ap.add_argument("--trial", type=str, required=True)
-    ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--scaler_dir", type=str, default="./scalers_diff")
+# ==========================================
+# 3. MAIN INFERENCE SCRIPT
+# ==========================================
 
-    # Inference behavior
-    ap.add_argument("--mode", type=str, choices=["sliding-last-step", "batch-seq"], default="sliding-last-step")
-    ap.add_argument("--seq_len", type=int, default=50, help="Window length used at training")
-    ap.add_argument("--stride", type=int, default=1, help="Stride for batch-seq mode; ignored for sliding-last-step")
-
-    # Sampler params
-    ap.add_argument("--sample_steps", type=int, default=1000)
-    ap.add_argument("--eta", type=float, default=0.0)
-
-    # Viz
-    ap.add_argument("--plot", action="store_true", default=True)
-
-    args = ap.parse_args()
-    device = args.device
-
-    # Load files
-    trial_dir = Path(args.data_dir) / args.subject / args.trial
-    fpath = trial_dir / "forces.npy"
-    jpath = trial_dir / "joints.npy"
-    if not fpath.exists() or not jpath.exists():
-        raise FileNotFoundError(f"Missing files: {fpath} or {jpath}")
-
-    forces = np.load(fpath)   # [T, F] in original units
-    joints = np.load(jpath)   # [T, J] in original units
-    print(f"Loaded: forces {forces.shape}, joints {joints.shape}")
-
-    infer = DiffusionInference(
-        ckpt_path=args.ckpt_path,
-        scaler_dir=args.scaler_dir,
-        device=device,
-        sample_steps=args.sample_steps,
-        eta=args.eta
+def run_inference(subject_name, trial_name, model_path, scalers_path, 
+                  data_root="./processed_data", output_dir="./inference_results"):
+    """
+    Run inference on a specific subject and trial.
+    
+    Args:
+        subject_name: e.g., "Subject01" or "Squat_01"
+        trial_name: e.g., "task1" or "trial1"
+        model_path: Path to saved .pth model
+        scalers_path: Path to scalers.json
+        data_root: Root directory containing processed data
+        output_dir: Where to save results
+    """
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n{'='*60}")
+    print(f"INFERENCE ON: {subject_name} / {trial_name}")
+    print(f"Device: {device}")
+    print(f"{'='*60}\n")
+    
+    # ===== 1. LOAD SCALERS =====
+    print("[1/5] Loading scalers...")
+    with open(scalers_path, 'r') as f:
+        scalers_dict = json.load(f)
+    
+    stats = {k: torch.tensor(v).float() for k, v in scalers_dict.items()}
+    print(f"  ✓ Loaded normalization statistics")
+    
+    # ===== 2. LOAD MODEL =====
+    print("\n[2/5] Loading model...")
+    model = DiffusionTransformer().to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+    print(f"  ✓ Loaded model from {model_path}")
+    
+    # ===== 3. INITIALIZE DDPM =====
+    print("\n[3/5] Initializing DDPM...")
+    ddpm = DDPM(device, n_steps=1000)
+    print(f"  ✓ DDPM initialized with {ddpm.n_steps} steps")
+    
+    # ===== 4. LOCATE DATA FILES =====
+    print("\n[4/5] Locating data files...")
+    data_path = Path(data_root) / subject_name / trial_name
+    
+    f_path = data_path / "forces.npy"
+    j_path = data_path / "joints.npy"
+    
+    if not f_path.exists():
+        raise FileNotFoundError(f"Forces file not found: {f_path}")
+    if not j_path.exists():
+        raise FileNotFoundError(f"Joints file not found: {j_path}")
+    
+    print(f"  ✓ Found forces: {f_path}")
+    print(f"  ✓ Found joints: {j_path}")
+    
+    # ===== 5. RUN INFERENCE =====
+    print("\n[5/5] Running inference...")
+    j_ref, j_pred = predict_full_trial(
+        model, ddpm, f_path, j_path, stats, device,
+        window_size=128, stride=64, inference_steps=50
     )
+    
+    # ===== 6. SAVE RESULTS =====
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Save predictions
+    save_name = f"{subject_name}_{trial_name}_prediction.npy"
+    np.save(output_path / save_name, j_pred)
+    print(f"\n  ✓ Saved predictions to: {output_path / save_name}")
+    
+    # ===== 7. VISUALIZE =====
+    print("\n[6/6] Creating visualization...")
+    fig, axes = plt.subplots(4, 3, figsize=(18, 14))
+    
+    for i, ax in enumerate(axes.flatten()):
+        ax.plot(j_ref[:, i], 'k--', alpha=0.6, linewidth=1.5, label='Ground Truth')
+        ax.plot(j_pred[:, i], 'r', linewidth=1.5, label='Prediction')
+        ax.set_title(f"Joint {i+1}", fontsize=12, fontweight='bold')
+        ax.set_xlabel("Frame")
+        ax.set_ylabel("Angle")
+        ax.grid(True, alpha=0.3)
+        if i == 0:
+            ax.legend(loc='upper right')
+    
+    plt.suptitle(f"Inference: {subject_name} / {trial_name}", 
+                 fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    plot_name = f"{subject_name}_{trial_name}_comparison.png"
+    plt.savefig(output_path / plot_name, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved plot to: {output_path / plot_name}")
+    
+    # ===== 8. COMPUTE METRICS =====
+    print("\n" + "="*60)
+    print("RESULTS SUMMARY")
+    print("="*60)
+    
+    mse = np.mean((j_ref - j_pred)**2)
+    mae = np.mean(np.abs(j_ref - j_pred))
+    rmse = np.sqrt(mse)
+    
+    print(f"MSE:  {mse:.6f}")
+    print(f"MAE:  {mae:.6f}")
+    print(f"RMSE: {rmse:.6f}")
+    
+    # Per-joint errors
+    print("\nPer-joint RMSE:")
+    for i in range(12):
+        joint_rmse = np.sqrt(np.mean((j_ref[:, i] - j_pred[:, i])**2))
+        print(f"  Joint {i+1:2d}: {joint_rmse:.6f}")
+    
+    print("\n" + "="*60)
+    print("INFERENCE COMPLETE!")
+    print("="*60 + "\n")
 
-    # Run inference in requested mode
-    if args.mode == "sliding-last-step":
-        y_true, y_pred = infer.run_sliding_last_step(forces, joints, seq_len=args.seq_len)
-        title = f"Diffusion | Sliding last-step (L={args.seq_len}, stride=1)"
-    else:
-        y_true, y_pred = infer.run_batch_seq(forces, joints, seq_len=args.seq_len, stride=args.stride)
-        title = f"Diffusion | Batch sequences (L={args.seq_len}, stride={args.stride})"
 
-    print(f"Aligned arrays: y_true {y_true.shape} | y_pred {y_pred.shape}")
-
-    # Metrics
-    metrics = compute_metrics(y_true, y_pred)
-    print_metrics(metrics, degrees=True)
-
-    # Plot
-    if args.plot and y_true.shape[0] > 0:
-        fig = plot_sequence(y_true, y_pred, title=title, in_degrees=True)
-        plt.show()
-
+# ==========================================
+# 4. EXAMPLE USAGE
+# ==========================================
 
 if __name__ == "__main__":
-    main()
+    
+    # ===== CONFIGURATION =====
+    SUBJECT_NAME = "Christine"      # Change this to your subject
+    TRIAL_NAME = "trial107"            # Change this to your trial
+    
+    MODEL_PATH = "./results/diffusion_biomech_model.pth"
+    SCALERS_PATH = "./results/scalers.json"
+    DATA_ROOT = "./processed_data"
+    OUTPUT_DIR = "./inference_results"
+    
+    # ===== RUN INFERENCE =====
+    run_inference(
+        subject_name=SUBJECT_NAME,
+        trial_name=TRIAL_NAME,
+        model_path=MODEL_PATH,
+        scalers_path=SCALERS_PATH,
+        data_root=DATA_ROOT,
+        output_dir=OUTPUT_DIR
+    )
