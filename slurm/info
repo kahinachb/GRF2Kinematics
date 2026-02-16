@@ -1,0 +1,2 @@
+ chmod +x slurm/jz_to_laptop.sh 
+ ./slurm/jz_to_laptop.sh 

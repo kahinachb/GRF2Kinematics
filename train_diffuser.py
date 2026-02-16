@@ -97,18 +97,74 @@ def compute_and_save_stats(file_list, save_path):
 class DiffusionTransformer(nn.Module):
     def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
-        self.joint_embed = nn.Linear(joint_dim, embed_dim)
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
         self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim))
+        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
         layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
         self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
         t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
-        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
         return self.output_layer(self.transformer(x_emb))
 
+class DiffusionTransformerConcat(nn.Module):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        
+        # Separate embeddings (same as before)
+        self.joint_embed = nn.Linear(joint_dim, embed_dim)
+        self.force_embed = nn.Linear(force_dim, embed_dim)
+        self.time_embed = nn.Sequential(
+            nn.Linear(1, embed_dim), 
+            nn.SiLU(), 
+            nn.Linear(embed_dim, embed_dim)
+        )
+        
+        # NEW: Projection layer to combine concatenated embeddings
+        # 256 (joints) + 256 (forces) + 256 (time) = 768 total
+        self.combine_proj = nn.Linear(embed_dim * 3, embed_dim)
+        
+        # Transformer (same as before)
+        layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim, 
+            nhead=nhead, 
+            batch_first=True, 
+            norm_first=True
+        )
+        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
+        
+        # Output layer (same as before)
+        self.output_layer = nn.Linear(embed_dim, joint_dim)
+
+    def forward(self, x, t, cond):
+        # x: [batch, 128, 12] - noisy joints
+        # t: [batch] - timestep
+        # cond: [batch, 128, 12] - force conditions
+        
+        batch_size, seq_len, _ = x.shape
+        
+        # 1. Create embeddings
+        x_emb = self.joint_embed(x)              # [batch, 128, 256]
+        f_emb = self.force_embed(cond)           # [batch, 128, 256]
+        t_emb = self.time_embed(t.view(-1, 1))   # [batch, 256]
+        
+        # 2. Expand time embedding to match sequence length
+        t_emb = t_emb.unsqueeze(1).expand(-1, seq_len, -1)  # [batch, 128, 256]
+        
+        # 3. CONCATENATE along the feature dimension
+        combined = torch.cat([x_emb, f_emb, t_emb], dim=-1)  # [batch, 128, 768]
+        
+        # 4. Project back down to embed_dim
+        combined = self.combine_proj(combined)    # [batch, 128, 256]
+        
+        # 5. Process through transformer
+        transformed = self.transformer(combined)  # [batch, 128, 256]
+        
+        # 6. Predict noise
+        return self.output_layer(transformed)     # [batch, 128, 12]
+    
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
@@ -195,14 +251,15 @@ def run_experiment():
 
 
     train_pairs = get_pairs(train_subs)
-    stats = compute_and_save_stats(train_pairs, results_dir /"scalers.json")
+    stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
     val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
-    model = DiffusionTransformer().to(device)
+    # model = DiffusionTransformer().to(device)
+    model = DiffusionTransformerConcat().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
@@ -240,7 +297,7 @@ def run_experiment():
         val_losses.append(v_loss/len(val_loader))
         print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
 
-    torch.save(model.state_dict(), results_dir /"diffusion_biomech_model.pth")
+    torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
@@ -260,7 +317,7 @@ def run_experiment():
     for i, ax in enumerate(axes.flatten()):
         ax.plot(ref[:, i], 'k--', label='Ref'); ax.plot(pred[:, i], 'r', label='Pred')
         ax.set_title(f"Joint {i+1}"); ax.legend()
-    plt.tight_layout(); plt.savefig(results_dir /"inference_test.png"); plt.close()
+    plt.tight_layout(); plt.savefig(results_dir /"inference_test_concat.png"); plt.close()
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
@@ -275,10 +332,10 @@ def run_experiment():
         ax.set_title(f"Joint {i+1}")
         if i == 0: ax.legend()
     plt.suptitle(f"Full Trial DDPM Inference: {random_trial[0].parent.name}", fontsize=16)
-    plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference.png"); plt.close()
+    plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference_concat.png"); plt.close()
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
-    plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve.png"); plt.close()
+    plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
     print(f"\n[FINISH] Résultats sauvegardés.")
 
 if __name__ == "__main__":
