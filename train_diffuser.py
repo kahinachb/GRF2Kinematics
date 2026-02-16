@@ -132,7 +132,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         curr_j = torch.randn((1, window_size, 12)).to(device)
         
         # Reverse Diffusion avec DDPM (sur 50 steps pour plus de vitesse en inférence)
-        inference_steps = 50 
+        inference_steps = 1000 
         step_size = ddpm.n_steps // inference_steps
         
         for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
@@ -151,7 +151,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("./processed_data")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data")
 
     results_dir = Path("results")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -206,7 +206,7 @@ def run_experiment():
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1
+    epochs = 500 
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
