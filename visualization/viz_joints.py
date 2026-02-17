@@ -2,7 +2,7 @@ import sys
 import os
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
-from utils.model_utils import *
+from utils.model_utils import build_human_model
 script_directory = os.path.dirname(os.path.abspath(__file__))
 parent_directory = os.path.dirname(os.path.dirname(script_directory))
 import meshcat
@@ -10,15 +10,17 @@ import meshcat_shapes
 from pinocchio.visualize import MeshcatVisualizer
 import pandas as pd
 from utils.utils import read_mks_data
+import pinocchio as pin
+import numpy as np
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/subject01/bend/joints.csv"
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/subject13/cmjs/joints.csv"
 q_ref_df = pd.read_csv(path_joint).iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 urdf_name = "human.urdf"
-urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf_scaled/Vincent_scaled.urdf"# Human base
+urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf_scaled/subject13_scaled.urdf"# Human base
 urdf_meshes_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/motif/model/human_urdf/meshes"
 model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
 data_h = model_h.createData()
