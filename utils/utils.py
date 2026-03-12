@@ -6,6 +6,17 @@ from utils.linear_algebra_utils import col_vector_3D, transform_to_global_frame,
 import yaml
 from utils.model_utils import get_virtual_pelvis_pose
 
+def to_m(vals):
+    arr = vals.values.astype(float)
+    return arr / 1000
+def find_col(df, name):
+    cols_lower = {c.lower(): c for c in df.columns}
+    key = name.lower()
+    if key not in cols_lower:
+        raise KeyError(f"Column '{name}' not found in {df.columns.tolist()}")
+    return cols_lower[key]
+
+
 def to_utc(s: pd.Series) -> pd.Series:
     return s.dt.tz_localize("UTC") if s.dt.tz is None else s.dt.tz_convert("UTC")
 

@@ -13,8 +13,11 @@ from utils.model_utils import *
 import meshcat_shapes
 # === Paths ===
 trial = "Trial109"
-mks_csv = f"DATA/Vincent/{trial}.csv"
-cop_csv = f"DATA/Vincent/{trial}_forces.csv"  # <-- X1 Y1 Z1 X2 Y2 Z2
+subject = "Vincent"
+mks_csv = f"DATA/{subject}/{trial}.csv"
+cop_csv = f"DATA/{subject}/{trial}_forces.csv"  # <-- X1 Y1 Z1 X2 Y2 Z2
+path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA//{subject}/{trial}_joints.csv"
+q_ref_df = pd.read_csv(path_joint).iloc[:, 1:]
 
 # === Units ===
 # Ton code mks utilise converter=1000.0 => mks en mm -> sortie en m.
@@ -89,6 +92,11 @@ T_name[2, 3] += 0.15
 add_sphere(vis, "world/COP_right",  radius=0.015, color=0x00aaFF)  # bleu clair
 add_sphere(vis, "world/COP_left", radius=0.015, color=0xFF8800)  # orange
 
+add_sphere(vis, "world/pos_bassin_RNEA", radius=0.03, color=0xFFFF00) # Jaune
+
+# Repère local pour vérifier l'orientation (Quaternion)
+meshcat_shapes.frame(vis["world/pos_bassin_RNEA/frame"], axis_length=0.2)
+
 meshcat_shapes.frame(
         vis["R_world"],
         axis_length=0.4,
@@ -110,6 +118,18 @@ def safe_place(node_name, pos3):
 
 # === Animate ===
 for i in range(n_frames):
+
+    q_current = q_ref_df.iloc[i].to_numpy()
+    pos_bassin_rnea = q_current[0:3]
+    quat_bassin = q_current[3:7] # qx, qy, qz, qw
+
+    T_bassin = np.eye(4)
+    T_bassin[:3, 3] = pos_bassin_rnea
+
+    place(vis, "pos_bassin_RNEA", pos_bassin_rnea)
+    set_tf(vis, "world/pos_bassin_RNEA/frame", T_bassin)
+
+
     # Markers
     frame = mks_dict[i]
     for name in mks_names:

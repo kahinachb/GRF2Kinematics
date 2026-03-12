@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import butter, filtfilt 
 
 def as_col(x):
         x = np.asarray(x)
@@ -31,3 +32,9 @@ def transform_to_global_frame(D, origin, rotation_matrix):
 
     D_global =  rotation_matrix @ D + origin
     return D_global
+
+def lowpass_filter(data, cutoff=7, fs=300, order=4):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return filtfilt(b, a, data, axis=0)

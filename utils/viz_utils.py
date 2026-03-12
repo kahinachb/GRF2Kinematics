@@ -9,7 +9,15 @@ def place_gep(viz, name, M):
     viz.viewer.gui.refresh()
 
 
-
+def safe_place(viewer, node_name, pos3):
+    """Place si non-NaN; sinon ignore la frame pour ce point."""
+    Z_EPS = 0.005 
+    if np.any(np.isnan(pos3)):
+        return
+    p = pos3.copy()
+    p[2] = p[2] + Z_EPS
+    place(viewer, node_name, p)
+    
 def meshcat_material(r, g, b, a):
     material = meshcat.geometry.MeshPhongMaterial()
     material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
