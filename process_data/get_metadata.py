@@ -173,7 +173,7 @@ def main(markers_file, forces_file, subject, output_dir=None):
     
     # Determine output directory
     if output_dir is None:
-        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/{subject}"
+        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{subject}"
     
     # Create output path for subject.yaml
     yaml_path = os.path.join(output_dir, f'{subject}.yaml')
@@ -190,10 +190,12 @@ def main(markers_file, forces_file, subject, output_dir=None):
 if __name__ == "__main__":
     subjects = ["subject01", "subject02", "subject03","subject04", "subject05", "subject06","subject07", "subject08", "subject09",
                 "subject10", "subject11", "subject12", "subject13", "subject14", "subject15", "subject16"]
-    task ="static2" 
+    task ="Trial109" 
+
+    # subjects = ["Christine","Vincent","Jeremy", "Jovana", "Maria","Serge","Subject1"]
     for subject in subjects:
-        markers_file = f"DATA/Anais/{subject}/{task}/markers.csv"
-        forces_file = f"DATA/Anais/{subject}/{task}/kinetics.csv"
+        markers_file = f"DATA/Anais/{subject}/{task}.csv"
+        forces_file = f"DATA/Anais/{subject}/{task}_forces.csv"
         
     # Run the extraction
     # Output will be saved as subject.yaml in the same directory as markers_file

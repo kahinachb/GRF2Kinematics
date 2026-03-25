@@ -22,9 +22,12 @@ def analyze_hybrid_structure(output_dir: str):
     for file_path in sorted(root.rglob("forces*.npy")):
         trial_dir = file_path.parent
         subject_dir = trial_dir.parent
+
         
         filename = file_path.name
-        subject_name = subject_dir.name
+        subject_name = subject_dir.name 
+        if trial_dir.name == f'{subject_name}_stsk' or trial_dir.name == f'{subject_name}_stsf': 
+            continue
         
         # --- LOGIQUE DE DÉTERMINATION DE LA FRÉQUENCE ---
         if filename == "forces_300.npy":
@@ -49,7 +52,7 @@ def analyze_hybrid_structure(output_dir: str):
 
             print(f"{subject_name[:12]:<12} | {trial_dir.name[:20]:<20} | {filename:<16} |{n_steps} |{fs:<6} | {duration:.2f}s")
 
-            print(f"   -> Exemple première ligne : {data[0]}")
+            # print(f"   -> Exemple première ligne : {data[0]}")
 
             # print("\n=== STRUCTURE DES DONNÉES ===")
             # print(f"Forces shape : {data.shape}")
@@ -58,10 +61,9 @@ def analyze_hybrid_structure(output_dir: str):
             joints_path = trial_dir / "joints.npy"
             if joints_path.exists():
                 joints_data = np.load(joints_path, mmap_mode='r')
-                print(f"   -> Exemple première ligne : {joints_data[0]}")
+                # print(f"   -> Exemple première ligne : {joints_data[0]}")
                 # print(f"Joints shape : {joints_data.shape}")
                 # print(f"Joints dtype : {joints_data.dtype}")
-            input()
 
 
         except Exception as e:

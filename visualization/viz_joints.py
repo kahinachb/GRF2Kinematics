@@ -19,8 +19,8 @@ from utils.viz_utils import add_sphere, place,set_tf, safe_place
 from pinocchio import Quaternion
 
 
-subject = 'subject13'
-task = 'cmjs'
+subject = 'subject01'
+task = 'dyna'
 
 fps = 300 
 dt = 1.0 / fps
@@ -28,8 +28,8 @@ dt = 1.0 / fps
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-path_joint = f"DATA/Anais/{subject}/{task}/joints.csv"
-q_ref_df = pd.read_csv(path_joint).iloc[:,1:]
+path_joint = f"DATA/Anais/{subject}/{task}/joints_whole_body.csv"
+q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 q_ref = lowpass_filter(q_ref, cutoff=2, fs=fps)
 for i in range(len(q_ref)):
@@ -39,6 +39,10 @@ for i in range(len(q_ref)):
 
 cop_csv = f"DATA/Anais/{subject}/{task}/kinetics.csv"
 df_cop = pd.read_csv(cop_csv).iloc[:,1:]
+
+urdf_path = f"DATA/urdf_scaled/{subject}_scaled_wholebody.urdf"# Human base
+
+
 
 if fps == 100:
     X1 = to_m(df_cop[find_col(df_cop, "X1")])
@@ -69,7 +73,6 @@ df_cop = df_cop.copy()
 df_cop[cols_to_filter] = grf_data_filtered
 
 urdf_name = "human.urdf"
-urdf_path = f"DATA/urdf_scaled/{subject}_scaled.urdf"# Human base
 urdf_meshes_path = "motif/model/human_urdf/meshes"
 model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
 data_h = model_h.createData()
@@ -100,14 +103,14 @@ add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  #
 
 
 
-for geom in vis_h.geometryObjects:
-    node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
-    viz_human.viewer[node_name].set_property("visible", False)
-for geom in vis_h.geometryObjects:
-    for mesh in meshes:
-        if mesh in geom.name:   
-            node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
-            viz_human.viewer[node_name].set_property("visible", True)
+# for geom in vis_h.geometryObjects:
+#     node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
+#     viz_human.viewer[node_name].set_property("visible", False)
+# for geom in vis_h.geometryObjects:
+#     for mesh in meshes:
+#         if mesh in geom.name:   
+#             node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
+#             viz_human.viewer[node_name].set_property("visible", True)
 
 
 # Background/grid
@@ -141,7 +144,6 @@ angle = np.pi / 2
 R_corr = np.array([[1, 0,           0          ],
                    [0, np.cos(angle), -np.sin(angle)],
                    [0, np.sin(angle),  np.cos(angle)]])
-
 for i in range(len(q_ref)):
 
     q_current = q_ref_df.iloc[i].to_numpy()
@@ -153,16 +155,16 @@ for i in range(len(q_ref)):
 
     T_bassin = np.eye(4)
 
-    R_final = R_corr @ R_original 
+    R_final =R_original 
     quat_final = pin.Quaternion(R_final)
 
     T_bassin[:3, :3] = R_final
-    T_bassin[:3, 3] = R_corr@ pos_bassin_rnea
+    T_bassin[:3, 3] = pos_bassin_rnea
     place(viewer, "pos_bassin_RNEA", T_bassin[:3, 3])
     set_tf(viewer, "pos_bassin_RNEA/frame", T_bassin[:3, :3])
     
-    q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
-    q_ref[i][0:3] = R_corr @ q_current[0:3]
+    # q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    # q_ref[i][0:3] = R_corr @ q_current[0:3]
 
     quat = pin.Quaternion(q_ref[i, 3:7])
     rot_base= quat.matrix()

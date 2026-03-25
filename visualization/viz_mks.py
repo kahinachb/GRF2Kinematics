@@ -11,22 +11,24 @@ from utils.viz_utils import add_sphere, place
 from utils.model_utils import *
 
 # === Load data ===
-df = pd.read_csv("DATA/Anais/subject01/static2_markers.csv")
+df = pd.read_csv("DATA/HUMANOIDS/Marie02/squat_attelle_poids_6kg_markers.csv")
 
 
 mks_dict, start_sample_dict = read_mks_data(df, start_sample=0, converter=1000.0)
-
+print(start_sample_dict)
 mks_names = start_sample_dict.keys()
 # === Initialize Meshcat Visualizer ===
 vis = meshcat.Visualizer().open()
 
 
-for name in mks_names:
-    add_sphere(vis, f"world/{name}", radius=0.01, color= 0xff0000)
 
+for name in mks_names:
+
+    add_sphere(vis, f"world/{name}", radius=0.01, color=0xff0000)
 
 # === Animate frame by frame ===
 for i, frame in enumerate(mks_dict):
+    
     for name in mks_names:
         pos = frame[name].reshape(3,)
         place(vis, name, pos)

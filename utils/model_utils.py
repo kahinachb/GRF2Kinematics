@@ -409,6 +409,50 @@ def get_pelvis_pose(mks_positions, gender = 'male'):
 
     return pose
 
+def elbow_joint_center(SJC, ELB_lat, LWRA, LWRB, elbow_offset=0.0, side='left'):
+    """
+    Estime le centre du coude (EJC) en utilisant les marqueurs du poignet
+    au lieu d'un marqueur technique sur le bras.
+    """
+    S = np.asarray(SJC)
+    K = np.asarray(ELB_lat)
+    W_med = np.asarray(LWRA)
+    W_lat = np.asarray(LWRB)
+    
+    # 1. Trouver le centre du poignet (milieu entre LWRA et LWRB)
+    W_mid = 0.5 * (W_med + W_lat)
+    
+    # 2. Axe longitudinal du bras (Épaule -> Coude)
+    arm_axis = K - S
+    arm_axis /= np.linalg.norm(arm_axis)
+    
+    # 3. Vecteur temporaire vers le poignet
+    v_to_wrist = W_mid - K
+    
+    # 4. Calcul de la direction "Antérieure" (devant le bras)
+    # Le produit vectoriel entre l'axe du bras et le poignet donne la normale au plan
+    # Pour le bras gauche, l'ordre du produit vectoriel compte pour l'orientation
+    if side.lower() == 'left':
+        ant = np.cross(arm_axis, v_to_wrist)
+    else:
+        ant = np.cross(v_to_wrist, arm_axis)
+        
+    ant /= np.linalg.norm(ant)
+    
+    # 5. Direction Médiale (vers l'intérieur du coude)
+    # On croise l'antérieur et l'axe du bras pour obtenir l'axe transversal
+    if side.lower() == 'left':
+        med = np.cross(ant, arm_axis)
+    else:
+        med = np.cross(arm_axis, ant)
+        
+    med /= np.linalg.norm(med)
+    
+    # 6. Position du centre du coude (EJC)
+    # On part du marqueur latéral et on s'enfonce vers l'intérieur
+    EJC = K + elbow_offset * med
+    
+    return EJC
 
 def ankle_joint_center(
 KJC, ANK_lat, TIB, ankle_offset, side,

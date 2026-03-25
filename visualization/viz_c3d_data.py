@@ -27,11 +27,9 @@ corners_fp2 = corners_all[:, :, 1]
 
 # /home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Anais/subject01/beam_markers.csv
 mks_csv = f"DATA/Anais/{trial}/{task}/markers.csv"
-cop_csv = f"DATA/Anais/{trial}/{task}/kinetics_filtered.csv"  # <-- X1 Y1 Z1 X2 Y2 Z2
+cop_csv = f"DATA/Anais/{trial}/{task}/kinetics.csv"  
 
 # === Units ===
-# Ton code mks utilise converter=1000.0 => mks en mm -> sortie en m.
-# On applique la même conversion aux COP si le fichier force est en mm.
 CONVERTER = 1000.0
 
 # === Load data ===
@@ -42,12 +40,10 @@ mks_names = start_sample_dict.keys()
 # === Load COP ===
 df_cop = pd.read_csv(cop_csv)
 
-# Sélection & conversion (mm -> m si nécessaire)
 def to_m(vals):
     arr = vals.values.astype(float)
     return arr / CONVERTER
 
-# Tente de trouver les colonnes (permissif si casse/espace)
 def find_col(df, name):
     cols_lower = {c.lower(): c for c in df.columns}
     key = name.lower()
@@ -76,7 +72,6 @@ Fz2 = to_val(df_cop[find_col(df_cop, "Fz2")])
 forces1 = np.stack([Fx1, Fy1, Fz1], axis=1)
 forces2 = np.stack([Fx2, Fy2, Fz2], axis=1)
 
-# Empile en (N,3)
 cop1 = np.stack([X1, Y1, Z1], axis=1)
 cop2 = np.stack([X2, Y2, Z2], axis=1)
 
@@ -170,7 +165,7 @@ for i in range(n_frames):
         place(vis, "COP_left", [0, 0, -10]) # On cache sous le sol
         vis["world/GRF_left"].set_object(g.LineSegments(g.PointsGeometry(np.zeros((3, 2)))))
 
-    # --- Gestion COP et GRF 2 (Left dans ton code) ---
+    # --- Gestion COP et GRF 2  ---
     p_start2 = cop2[i]
     f2 = forces2[i]
     if not np.any(np.isnan(p_start2)) and abs(f2[2]) > F_THRESHOLD:
