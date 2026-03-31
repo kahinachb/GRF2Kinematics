@@ -59,7 +59,14 @@ Y1 = to_m(df_cop[find_col(df_cop, "COPy1_glob")])
 X2 = to_m(df_cop[find_col(df_cop, "COPx2_glob")])
 Y2 = to_m(df_cop[find_col(df_cop, "COPy2_glob")])
 Z1 = np.zeros_like(X1)
-Z2 = np.zeros_like(X1)
+Z2 = np.zeros_like(X2)
+
+# X1 = to_m(df_cop[find_col(df_cop, "Cx1")])
+# Y1 = to_m(df_cop[find_col(df_cop, "Cy1")])
+# Z1 = to_m(df_cop[find_col(df_cop, "Cz1")])
+# X2 = to_m(df_cop[find_col(df_cop, "Cx2")])
+# Y2 = to_m(df_cop[find_col(df_cop, "Cy2")])
+# Z2 = to_m(df_cop[find_col(df_cop, "Cz2")])
 
 # Empile en (N,3)
 cop1 = np.stack([X1, Y1, Z1], axis=1) 
@@ -146,10 +153,16 @@ for i in range(n_frames):
     for name in mks_names:
         pos = frame[name].reshape(3,)
         place(vis,name, pos)
-
+  
     # COPs
+    center_fp1 = np.array([0.300, 0.250, 0])
+    center_fp2 = np.array([0.300, -0.340, 0])
+
     safe_place("COP_right",  cop1[i])
     safe_place("COP_left",cop2[i])
+
+    # safe_place("COP_right",  center_fp1)
+    # safe_place("COP_left",center_fp2)
 
     # pelvis_pose = get_pelvis_pose(frame)
     # pelvis = as_col(pelvis_pose[:3, 3])

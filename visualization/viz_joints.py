@@ -19,16 +19,19 @@ from utils.viz_utils import add_sphere, place,set_tf, safe_place
 from pinocchio import Quaternion
 
 
-subject = 'subject01'
-task = 'dyna'
+subject = 'Vincent'
 
-fps = 300 
+task = 'Trial109'
+which = 'Vinc'
+fps = 100 
 dt = 1.0 / fps
+
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-path_joint = f"DATA/Anais/{subject}/{task}/joints_whole_body.csv"
+path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
 q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 q_ref = lowpass_filter(q_ref, cutoff=2, fs=fps)
@@ -36,15 +39,30 @@ for i in range(len(q_ref)):
     q_quat = q_ref[i, 3:7]
     q_ref[i, 3:7] = q_quat / np.linalg.norm(q_quat)
 
+if which =='HUMANOIDS':
+    cop_csv = f"DATA/{which}/{subject}/{task}_kinetics_global.csv"
+    df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 
-cop_csv = f"DATA/Anais/{subject}/{task}/kinetics.csv"
-df_cop = pd.read_csv(cop_csv).iloc[:,1:]
+    X1 = to_m(df_cop[find_col(df_cop, "COPx1_glob")])
+    Y1 = to_m(df_cop[find_col(df_cop, "COPy1_glob")])
+    X2 = to_m(df_cop[find_col(df_cop, "COPx2_glob")])
+    Y2 = to_m(df_cop[find_col(df_cop, "COPy2_glob")])
+    Z1 = np.zeros_like(X1)
+    Z2 = np.zeros_like(X1)
 
-urdf_path = f"DATA/urdf_scaled/{subject}_scaled_wholebody.urdf"# Human base
+    Fz1 = df_cop[find_col(df_cop, "Fz1_glob")]
+    Fz2 = df_cop[find_col(df_cop, "Fz2_glob")]
 
+    cop1 = np.stack([X1, Y1, Z1], axis=1)
+    cop2 = np.stack([X2, Y2, Z2], axis=1)
 
+    X1, Y1, Fz1,  X2, Y2,Fz2 = "COPx1_glob","COPy1_glob","Fz1_glob","COPx2_glob","COPy2_glob","Fz2_glob"
+    cols_to_filter = [
+                        X1, Y1, Fz1,  X2, Y2,Fz2]
 
-if fps == 100:
+elif which =='Vinc':
+    cop_csv = f"DATA/{which}/{subject}/{task}_forces.csv"
+    df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
     X1 = to_m(df_cop[find_col(df_cop, "X1")])
     Y1 = to_m(df_cop[find_col(df_cop, "Y1")])
     Z1 = to_m(df_cop[find_col(df_cop, "Z1")])
@@ -55,25 +73,36 @@ if fps == 100:
     cop2 = np.stack([X2, Y2, Z2], axis=1)
     cols_to_filter = [
     'X1', 'Y1', 'Z1', 'FZ1',  'X2', 'Y2', 'Z2','FZ2']
-
+    
 else : 
+    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics.csv"
+    df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
+
     X1 = to_m(df_cop[find_col(df_cop, "CoP1_x")])
     Y1 = to_m(df_cop[find_col(df_cop, "CoP1_y")])
     Z1 = to_m(df_cop[find_col(df_cop, "CoP1_z")])
     X2 = to_m(df_cop[find_col(df_cop, "CoP2_x")])
     Y2 = to_m(df_cop[find_col(df_cop, "CoP2_y")])
     Z2 = to_m(df_cop[find_col(df_cop, "CoP2_z")])
+
     cop1 = np.stack([X1, Y1, Z1], axis=1)
     cop2 = np.stack([X2, Y2, Z2], axis=1)
+
     cols_to_filter = [
     'CoP1_x', 'CoP1_y', 'CoP1_z', 'Fz1',  'CoP2_x', 'CoP2_y', 'CoP2_z','Fz2']
+
+
+# urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
+
+    
+
 
 grf_data_filtered = lowpass_filter(df_cop[cols_to_filter].to_numpy(), cutoff=2, fs=fps)
 df_cop = df_cop.copy()
 df_cop[cols_to_filter] = grf_data_filtered
 
 urdf_name = "human.urdf"
-urdf_meshes_path = "motif/model/human_urdf/meshes"
+urdf_meshes_path = "motif/model/human_urdf"
 model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
 data_h = model_h.createData()
 
@@ -194,9 +223,14 @@ for i in range(len(q_ref)):
     cop_r = cop1[i]  # (x,y,z)
     cop_l = cop2[i]
 
-    if fps == 100 : 
+    if which == 'HUMANOIDS': 
+        Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
+        Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
+    elif which =='Vinc':
         Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
         Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
+
+        
     else : 
         Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
         Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)

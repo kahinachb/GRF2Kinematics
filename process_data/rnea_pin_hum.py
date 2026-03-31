@@ -10,18 +10,18 @@ from utils.linear_algebra_utils import lowpass_filter
 # =====================================================================
 # CONFIG
 # =====================================================================
-BASE_DATA_DIR = "DATA/Vinc"
-URDF_DIR      = "DATA/urdf_scaled/Vinc"
+BASE_DATA_DIR = "DATA/HUMANOIDS"
+URDF_DIR      = "DATA/urdf_scaled/HUMANOIDS"
 MESHES_PATH   = "motif/model/human_urdf/meshes"
 OUTPUT_DIR    = "FIGURES"
 
 fps = 100
 dt  = 1.0 / fps
 
-fx1,fy1,fz1 = 'FX1','FY1','FZ1'
-mx1,my1,mz1 = 'MX1','MY1','MZ1'
-fx2,fy2,fz2 = 'FX2','FY2','FZ2'
-mx2,my2,mz2 = 'MX2','MY2','MZ2'
+fx1, fy1, fz1 = 'Fx1_glob', 'Fy1_glob', 'Fz1_glob'
+mx1,my1,mz1 =  'Mx1_glob', 'My1_glob', 'Mz1_glob'
+fx2, fy2, fz2 = 'Fx2_glob', 'Fy2_glob', 'Fz2_glob'
+mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -30,19 +30,22 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # =====================================================================
 def discover_trials(subject_dir):
     """
-    Trouve tous les trials pour lesquels Trial{N}_joints.csv
-    ET Trial{N}_forces.csv existent dans le dossier sujet.
-    Retourne une liste de numéros de trial (ex: ['108', '120', ...])
+    all trial that contains 'squat' 
     """
-    trial_numbers = set()
+    trial_names = set()
+
     for fname in os.listdir(subject_dir):
-        m = re.match(r'^Trial(\d+)_joints\.csv$', fname, re.IGNORECASE)
-        if m:
-            num = m.group(1)
-            forces_file = os.path.join(subject_dir, f"Trial{num}_forces.csv")
-            if os.path.exists(forces_file):
-                trial_numbers.add(num)
-    return sorted(trial_numbers, key=lambda x: int(x))
+        if fname.lower().endswith("_joints.csv") and "squat" in fname.lower():
+            
+          
+            trial_name = fname[:-11]  
+            
+            kinetics_file = os.path.join(subject_dir, f"{trial_name}_kinetics_global.csv")
+            
+            if os.path.exists(kinetics_file):
+                trial_names.add(trial_name)
+
+    return sorted(trial_names)
 
 def compute_rmse(a, b):
     return np.sqrt(np.mean((a - b) ** 2, axis=0))
@@ -52,40 +55,37 @@ def compute_mae(a, b):
 
 
 def process_subject_trial(subject, trial_num):
-    trial_id = f"Trial{trial_num}"
+    trial_id = f"{trial_num}"
     print(f"\n{'='*60}")
     print(f"  {subject}  |  {trial_id}")
     print(f"{'='*60}")
 
     subject_dir = os.path.join(BASE_DATA_DIR, subject)
     path_joint  = os.path.join(subject_dir, f"{trial_id}_joints.csv")
-    path_grf    = os.path.join(subject_dir, f"{trial_id}_forces.csv")
-    urdf_path   = os.path.join(URDF_DIR,    f"{subject}_scaled.urdf")
+    path_grf    = os.path.join(subject_dir, f"{trial_id}_kinetics_global.csv")
+
+    base_subject = re.sub(r'\d+$', '', subject)
+
+    if "attelle_poids" in trial_id:
+        suffix = "_attelle_poids"
+    elif "attelle" in trial_id:
+        suffix = "_attelle"
+    else:
+        suffix = ""
+
+    urdf_name = f"{base_subject}{suffix}.urdf"
+    urdf_path = os.path.join(URDF_DIR, urdf_name)
+    print(urdf_path)
+
 
     for p in [path_joint, path_grf, urdf_path]:
         if not os.path.exists(p):
             print(f"  [SKIP] : {p}")
             return
 
-        # Plateforme 1
-    pf1_corners = np.array([
-        [400.024255, -0.025507, 0.0],
-        [-0.025763, -0.024481, 0.0],
-        [-0.024255, 600.025507, 0.0],
-        [400.025763, 600.024481, 0.0]
-    ])
+    p_pf_center1 = (0.3, 0.250, 0.048)
+    p_pf_center2 = (0.3, -0.34, 0.048)
 
-    # Plateforme 2
-    pf2_corners = np.array([
-        [800.224252, -0.025507, 0.0],
-        [400.174264, -0.024481, 0.0],
-        [400.175757, 600.025507, 0.0],
-        [800.255775, 600.024481, 0.0]
-    ])
-
-    # Centres
-    p_pf_center1 = pf1_corners.mean(axis=0)/1000
-    p_pf_center2 = pf2_corners.mean(axis=0)/1000
 
     # --- GRF ---
     cols_to_filter = [fx1,fy1,fz1,mx1,my1,mz1,fx2,fy2,fz2,mx2,my2,mz2]
@@ -98,7 +98,7 @@ def process_subject_trial(subject, trial_num):
     off_fx2 = grf_df[fx2].mean();  off_fy2 = grf_df[fy2].mean()
 
     # --- Joints ---
-    q_ref_df    = pd.read_csv(path_joint)#.iloc[:, 1:]
+    q_ref_df    = pd.read_csv(path_joint).iloc[:, 1:]
     joint_names = list(q_ref_df.columns)
     q_ref_raw   = q_ref_df.to_numpy(dtype=float)
     q_ref       = lowpass_filter(q_ref_raw, cutoff=2, fs=fps)
@@ -179,23 +179,13 @@ def process_subject_trial(subject, trial_num):
         pf2_forces_clean[i]  = F2c
         pf2_moments_clean[i] = M2c
 
-
     mean_mrnea = np.mean(rnea_moments_world, axis=0)
     mean_mpf = np.mean(pf_moments_clean, axis=0)
 
     offset_Mx = mean_mrnea[0] - mean_mpf[0]
     offset_My = mean_mrnea[1] - mean_mpf[1]
     offset_Mz = -np.mean(pf_moments_clean[:, 2]) # Pour centrer Mz à 0
-    offset_Mz1 = -np.mean(pf1_moments_clean[:, 2])
-    offset_Mz2 = -np.mean(pf2_moments_clean[:, 2])
-
-    # for i in range(n_samples):
-    #     pf_moments_clean[i, 0] = pf_moments_clean[i, 0] + offset_Mx # Mx
-    #     pf_moments_clean[i, 1] = pf_moments_clean[i, 1] + offset_My # My
-
-    # ##moment_z ~ 0
-    # pf_moments_clean[:, 2] = pf_moments_clean[:, 2]+offset_Mz
-
+   
     for i in range(n_samples):
         #au prorata
         fz_total = pf1_forces_clean[i, 2] + pf2_forces_clean[i, 2]
@@ -217,7 +207,6 @@ def process_subject_trial(subject, trial_num):
 
         pf_moments_clean[i] = pf1_moments_clean[i] + pf2_moments_clean[i]
     
-
     rnea_forces_pelvis  = np.zeros((n_samples, 3))
     rnea_moments_pelvis = np.zeros((n_samples, 3))
     pf_forces_pelvis    = np.zeros((n_samples, 3))
@@ -252,9 +241,7 @@ def process_subject_trial(subject, trial_num):
 
         pf_moments_pelvis[i] = pf1_moments_pelvis[i] + pf2_moments_pelvis[i]
 
-        
-    cut = -30 # enlève les 50 derniers
-
+    cut = -20
     
     pf_forces_clean = pf_forces_clean[:cut]
     rnea_forces_world = rnea_forces_world[:cut]
@@ -265,7 +252,6 @@ def process_subject_trial(subject, trial_num):
     rnea_forces_pelvis = rnea_forces_pelvis[:cut]
     pf_moments_pelvis = pf_moments_pelvis[:cut]
     rnea_moments_pelvis = rnea_moments_pelvis[:cut]
-
 
     rmse_f = compute_rmse(rnea_forces_world,  pf_forces_clean)
     rmse_m = compute_rmse(rnea_moments_world, pf_moments_clean)
@@ -279,6 +265,7 @@ def process_subject_trial(subject, trial_num):
 
     time = np.linspace(0, n_samples * dt, n_samples)
     time = time[:cut]
+
     
     fig1, axs = plt.subplots(2, 3, figsize=(18, 10), sharex=True)
     titles_f = ['Fx (Antéro-post)', 'Fy (Médiolat)',  'Fz (Vertical)']
@@ -417,10 +404,11 @@ print(f"Sujets trouvés : {subjects}")
 
 for subject in subjects:
     subject_dir  = os.path.join(BASE_DATA_DIR, subject)
-    trial_nums   = discover_trials(subject_dir)
-    print(f"\n{subject} — trials trouvés : {[f'Trial{n}' for n in trial_nums]}")
-    for trial_num in trial_nums:
+    trial_names   = discover_trials(subject_dir)
+    print(f"\n{subject} — trials trouvés : {trial_names}")
+
+    for trial_name in trial_names:
         try:
-            process_subject_trial(subject, trial_num)
+            process_subject_trial(subject, trial_name)
         except Exception as e:
-            print(f"  [ERROR] {subject}/Trial{trial_num} : {e}")
+            print(f"  [ERROR] {subject}/{trial_name} : {e}")

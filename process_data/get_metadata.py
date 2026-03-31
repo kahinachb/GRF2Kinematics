@@ -114,6 +114,8 @@ def extract_weight_from_forces(forces_file):
         total_fz = first_frame['FZ1'] + first_frame['FZ2']
     elif 'Fz1' in columns:
         total_fz = first_frame['Fz1'] + first_frame['Fz2']
+    elif 'Fz1_glob' in columns:
+        total_fz = first_frame['Fz1_glob'] + first_frame['Fz2_glob']
     else:
         raise ValueError("Could not find force columns (FZ1/FZ2 or Fz1/Fz2)")
     
@@ -148,36 +150,36 @@ def main(markers_file, forces_file, subject, output_dir=None):
     print("=" * 60)
     
     print("\n--- Extracting Height ---")
-    height = extract_height_from_markers(markers_file)
+    # height = extract_height_from_markers(markers_file)
     
     print("\n--- Extracting Weight ---")
     weight_N, weight_kg = extract_weight_from_forces(forces_file)
     
     # Convert height to meters if it appears to be in millimeters
-    height_m = height / 1000 if height > 100 else height
+    # height_m = height / 1000 if height > 100 else height
     
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
-    print(f"Height: {height:.2f} mm ({height_m:.2f} m)")
+    # print(f"Height: {height:.2f} mm ({height_m:.2f} m)")
     print(f"Weight: {weight_N:.2f} N ({weight_kg:.2f} kg)")
     print("=" * 60)
     
     # Prepare results dictionary for YAML
     results = {
-        'height_mm': float(height),
-        'height_m': float(height_m),
+        # 'height_mm': float(height),
+        # 'height_m': float(height_m),
         'weight_N': float(weight_N),
         'weight_kg': float(weight_kg)
     }
     
     # Determine output directory
     if output_dir is None:
-        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{subject}"
+        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/{subject}"
     
     # Create output path for subject.yaml
-    yaml_path = os.path.join(output_dir, f'{subject}.yaml')
-    
+    yaml_path = os.path.join(output_dir, f'{subject}_attelle_poids.yaml')
+    print(yaml_path)
     # Save results to YAML file
     with open(yaml_path, 'w') as f:
         yaml.dump(results, f, default_flow_style=False, sort_keys=False)
@@ -188,14 +190,23 @@ def main(markers_file, forces_file, subject, output_dir=None):
 
 
 if __name__ == "__main__":
-    subjects = ["subject01", "subject02", "subject03","subject04", "subject05", "subject06","subject07", "subject08", "subject09",
-                "subject10", "subject11", "subject12", "subject13", "subject14", "subject15", "subject16"]
-    task ="Trial109" 
+    # subjects = ["subject01", "subject02", "subject03","subject04", "subject05", "subject06","subject07", "subject08", "subject09",
+    #             "subject10", "subject11", "subject12", "subject13", "subject14", "subject15", "subject16"]
+    
+    subjects = ['Kahina', 'Laure', 'Marie', 'Maxime', 'Mohamed', 'Thanh', 'Thomas', 'Zoe', 'Zoe02', 'Kahina02',
+            'Laure02', 'Marie02', 'Maxime02', 'Mohamed02', 'Thanh02']
+    
+    # subjects = ['Kahina_6kg', 'Laure_6kg', 'Marie_6kg', 'Maxime_6kg', 'Mohamed_6kg', 'Thanh_6kg', 'Thomas_6kg', 'Zoe_6kg', 
+    #             'Zoe02_6kg', 'Kahina02_6kg',
+    #         'Laure02_6kg', 'Marie02_6kg', 'Maxime02_6kg', 'Mohamed02_6kg', 'Thanh02_6kg',
+    #         'Maxime_8kg','Mohamed_8kg','Thomas_8kg']
+    
+    task ="squat_attelle_poids" 
 
     # subjects = ["Christine","Vincent","Jeremy", "Jovana", "Maria","Serge","Subject1"]
     for subject in subjects:
-        markers_file = f"DATA/Anais/{subject}/{task}.csv"
-        forces_file = f"DATA/Anais/{subject}/{task}_forces.csv"
+        markers_file = f"DATA/HUMANOIDS/{subject}/{task}_markers.csv"
+        forces_file = f"DATA/HUMANOIDS/{subject}/{task}_kinetics_global.csv"
         
     # Run the extraction
     # Output will be saved as subject.yaml in the same directory as markers_file

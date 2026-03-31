@@ -11,13 +11,13 @@ import ezc3d
 # CONFIG
 # =====================================================================
 BASE_DATA_DIR = "DATA/Anais"
-URDF_DIR      = "DATA/urdf_scaled"
+URDF_DIR      = "DATA/urdf_scaled/Anais"
 C3D_BASE_DIR  = "/home/kchalabi/Documents/THESE/datasets_kinetics/Anais"
 MESHES_PATH   = "motif/model/human_urdf/meshes"
 OUTPUT_DIR    = "FIGURES"
 
-TASK_KEYWORDS = ["static", "cmjs", "dyna", "lufe", "luyo", "walk", "bend"]
-fps = 300
+TASK_KEYWORDS = ["static", "dyna", "lufe", "luyo", "walk", "bend"]
+fps = 100
 dt  = 1.0 / fps
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -64,7 +64,8 @@ def process_subject_task(subject, task):
     fx2,fy2,fz2 = 'Fx2','Fy2','Fz2'
     mx2,my2,mz2 = 'Mx2_glob','My2_glob','Mz2_glob'
 
-    grf_df_raw      = pd.read_csv(path_grf)
+    grf_df_raw    = pd.read_csv(path_grf)
+    grf_df_raw = grf_df_raw.iloc[::3].reset_index(drop=True)
     cols_to_filter  = [fx1,fy1,fz1,mx1,my1,mz1,fx2,fy2,fz2,mx2,my2,mz2]
     grf_df          = grf_df_raw.copy()
     grf_df[cols_to_filter] = lowpass_filter(
@@ -73,8 +74,11 @@ def process_subject_task(subject, task):
     off_fx1 = grf_df[fx1].mean();  off_fy1 = grf_df[fy1].mean()
     off_fx2 = grf_df[fx2].mean();  off_fy2 = grf_df[fy2].mean()
 
+    fz_mean = np.mean(grf_df[fz1].iloc[:].values + grf_df[fz2].iloc[:].values)
+
     # --- Joints ---
-    q_ref_df   = pd.read_csv(path_joint).iloc[:, 1:]
+    q_ref_df   = pd.read_csv(path_joint)#.iloc[:, 1:]
+    q_ref_df = q_ref_df.iloc[::3].reset_index(drop=True)
     joint_names = list(q_ref_df.columns)
     q_ref_raw  = q_ref_df.to_numpy(dtype=float)
     q_ref      = lowpass_filter(q_ref_raw, cutoff=2, fs=fps)
@@ -89,7 +93,24 @@ def process_subject_task(subject, task):
     n_samples = len(q_ref)
     nv        = model_h.nv
 
-    print(f"  Masse: {pin.computeTotalMass(model_h):.2f} kg | nv={nv} | n={n_samples}")
+    print(f"  weight: {pin.computeTotalMass(model_h):.2f} kg | nv={nv} | n={n_samples}")
+
+    g = abs(model_h.gravity.linear[2]) 
+    target_mass = fz_mean / g
+    print(f"weight from grf : {target_mass:.2f} kg")
+
+    print(f"urdf weight : {pin.computeTotalMass(model_h):.2f} kg")
+    print(f"dofs: {nv}")
+    # print(f"model gravity : {model_h.gravity.linear}")
+
+    current_mass = pin.computeTotalMass(model_h)
+    ratio = target_mass / current_mass
+    for i in range(len(model_h.inertias)):
+        model_h.inertias[i].mass *= ratio
+        model_h.inertias[i].inertia *= ratio
+    data_h = model_h.createData()
+
+    print(f"new urdf weight : {pin.computeTotalMass(model_h):.2f} kg")
 
     # --- velocity and acc ---
     v_ref = np.zeros((n_samples, nv))
@@ -104,6 +125,12 @@ def process_subject_task(subject, task):
     rnea_moments_world = np.zeros((n_samples, 3))
     pf_forces_clean    = np.zeros((n_samples, 3))
     pf_moments_clean   = np.zeros((n_samples, 3))
+
+    pf1_forces_clean  = np.zeros((n_samples, 3))
+    pf1_moments_clean = np.zeros((n_samples, 3))
+    pf2_forces_clean  = np.zeros((n_samples, 3))
+    pf2_moments_clean = np.zeros((n_samples, 3))
+
 
     for i in range(n_samples):
         tau       = pin.rnea(model_h, data_h, q_ref[i], v_ref[i], a_ref[i])
@@ -128,6 +155,98 @@ def process_subject_task(subject, task):
         pf_forces_clean[i]  = F1c + F2c
         pf_moments_clean[i] = M1c + M2c
 
+        pf1_forces_clean[i]  = F1c
+        pf1_moments_clean[i] = M1c
+
+        pf2_forces_clean[i]  = F2c
+        pf2_moments_clean[i] = M2c
+
+    mean_mrnea = np.mean(rnea_moments_world, axis=0)
+    mean_mpf = np.mean(pf_moments_clean, axis=0)
+    offset_Mx = mean_mrnea[0] - mean_mpf[0]
+    offset_My = mean_mrnea[1] - mean_mpf[1]
+    offset_Mz = -np.mean(pf_moments_clean[:, 2]) # Pour centrer Mz à 0
+    # offset_Mz1 = -np.mean(pf1_moments_clean[:, 2])
+    # offset_Mz2 = -np.mean(pf2_moments_clean[:, 2])
+
+    # for i in range(n_samples):
+    #     pf_moments_clean[i, 0] = pf_moments_clean[i, 0] + offset_Mx # Mx
+    #     pf_moments_clean[i, 1] = pf_moments_clean[i, 1] + offset_My # My
+
+    # ##moment_z ~ 0
+    # pf_moments_clean[:, 2] = pf_moments_clean[:, 2]+offset_Mz
+
+    for i in range(n_samples):
+        # ratio of charge each foot
+        fz_total = pf1_forces_clean[i, 2] + pf2_forces_clean[i, 2]
+        
+     
+        if fz_total > 10.0: 
+            alpha1 = pf1_forces_clean[i, 2] / fz_total
+            alpha2 = pf2_forces_clean[i, 2] / fz_total
+        else:
+            alpha1 = 0.5
+            alpha2 = 0.5
+
+        pf1_moments_clean[i, 0] += alpha1 * offset_Mx
+        pf1_moments_clean[i, 1] += alpha1 * offset_My
+        pf1_moments_clean[i, 2] += alpha1 *offset_Mz
+
+        pf2_moments_clean[i, 0] += alpha2 * offset_Mx
+        pf2_moments_clean[i, 1] += alpha2 * offset_My
+        pf2_moments_clean[i, 2] += alpha2 *offset_Mz
+
+        pf_moments_clean[i] = pf1_moments_clean[i] + pf2_moments_clean[i]
+    
+    rnea_forces_pelvis  = np.zeros((n_samples, 3))
+    rnea_moments_pelvis = np.zeros((n_samples, 3))
+    pf_forces_pelvis    = np.zeros((n_samples, 3))
+    pf_moments_pelvis   = np.zeros((n_samples, 3))
+
+    pf1_forces_pelvis  = np.zeros((n_samples, 3))
+    pf1_moments_pelvis = np.zeros((n_samples, 3))
+    pf2_forces_pelvis  = np.zeros((n_samples, 3))
+    pf2_moments_pelvis = np.zeros((n_samples, 3))
+
+    for i in range(n_samples):
+        rot_base   = pin.Quaternion(q_ref[i, 3:7]).matrix() # R_base
+        pos_bassin = q_ref[i, 0:3]                         # 
+        
+        # F_pelvis = R^T * F_world
+        rnea_forces_pelvis[i] = rot_base.T @ rnea_forces_world[i]
+        
+        #M_pelvis = R^T * (M_world - OP ^ F_world)
+        m_transport_rnea = rnea_moments_world[i] - np.cross(pos_bassin, rnea_forces_world[i])
+        rnea_moments_pelvis[i] = rot_base.T @ m_transport_rnea
+
+        # pf from world to pelvis
+        pf1_forces_pelvis[i] = rot_base.T @ pf1_forces_clean[i]
+        pf2_forces_pelvis[i] = rot_base.T @ pf2_forces_clean[i]
+        pf_forces_pelvis[i] = pf1_forces_pelvis[i] + pf2_forces_pelvis[i]
+        
+
+        m_world_to_bassin1 = pf1_moments_clean[i] - np.cross(pos_bassin, pf1_forces_clean[i])
+        pf1_moments_pelvis[i] = rot_base.T @ m_world_to_bassin1
+        m_world_to_bassin2 = pf2_moments_clean[i] - np.cross(pos_bassin, pf2_forces_clean[i])
+        pf2_moments_pelvis[i] = rot_base.T @ m_world_to_bassin2
+
+        pf_moments_pelvis[i] = pf1_moments_pelvis[i] + pf2_moments_pelvis[i]
+
+
+    cut = -50
+
+    
+    pf_forces_clean = pf_forces_clean[:cut]
+    rnea_forces_world = rnea_forces_world[:cut]
+    pf_moments_clean = pf_moments_clean[:cut]
+    rnea_moments_world = rnea_moments_world[:cut]
+
+
+    pf_forces_pelvis = pf_forces_pelvis[:cut]
+    rnea_forces_pelvis = rnea_forces_pelvis[:cut]
+    pf_moments_pelvis = pf_moments_pelvis[:cut]
+    rnea_moments_pelvis = rnea_moments_pelvis[:cut]
+
     # --- metrics ---
     rmse_f = compute_rmse(rnea_forces_world,  pf_forces_clean)
     rmse_m = compute_rmse(rnea_moments_world, pf_moments_clean)
@@ -140,6 +259,7 @@ def process_subject_task(subject, task):
     print(f"  RMSE Moments(Nm): X={rmse_m[0]:.2f} Y={rmse_m[1]:.2f} Z={rmse_m[2]:.2f}")
 
     time = np.linspace(0, n_samples * dt, n_samples)
+    time = time[:cut]
 
     # =====================================================================
     # plots
@@ -160,20 +280,49 @@ def process_subject_task(subject, task):
         axs[1,j].set_ylabel("Moment (Nm)"); axs[1,j].set_xlabel("Temps (s)")
         axs[1,j].legend(); axs[1,j].grid(alpha=0.3)
 
-    fig1.suptitle(f"{subject} — {task}", fontsize=16)
+    fig1.suptitle(f"{subject} — {task}- global", fontsize=16)
     fig1.tight_layout(rect=[0, 0.03, 1, 0.95])
-    out1 = os.path.join(OUTPUT_DIR, f"{subject}_{task}_forces_moments.png")
-    # fig1.savefig(out1, dpi=150, bbox_inches='tight')
-    # plt.close(fig1)
-    # print(f"  Saved: {out1}")
+  
+
+    rmse_f = compute_rmse(rnea_forces_pelvis,  pf_forces_pelvis)
+    rmse_m = compute_rmse(rnea_moments_pelvis, pf_moments_pelvis)
+    mae_f  = compute_mae(rnea_forces_pelvis,   pf_forces_pelvis)
+    mae_m  = compute_mae(rnea_moments_pelvis,  pf_moments_pelvis)
+
+
+    fig3, axs = plt.subplots(2, 3, figsize=(18, 10), sharex=True)
+    titles_f = ['Fx (Antéro-post)', 'Fy (Médiolat)',  'Fz (Vertical)']
+    titles_m = ['Mx (Sagittal)',     'My (Frontal)',   'Mz (Vertical)']
+    for j in range(3):
+        axs[0,j].plot(time, pf_forces_pelvis[:,j],    color='blue',   alpha=0.6, label='PF')
+        axs[0,j].plot(time, rnea_forces_pelvis[:,j],  color='red',              label='RNEA')
+        axs[0,j].set_title(f"{titles_f[j]}\nRMSE={rmse_f[j]:.2f} N  |  MAE={mae_f[j]:.2f} N")
+        axs[0,j].set_ylabel("Force (N)"); axs[0,j].legend(); axs[0,j].grid(alpha=0.3)
+
+        axs[1,j].plot(time, pf_moments_pelvis[:,j],   color='blue',  alpha=0.6, label='PF')
+        axs[1,j].plot(time, rnea_moments_pelvis[:,j], color='red',            label='RNEA')
+        axs[1,j].set_title(f"{titles_m[j]}\nRMSE={rmse_m[j]:.2f} Nm  |  MAE={mae_m[j]:.2f} Nm")
+        axs[1,j].set_ylabel("Moment (Nm)"); axs[1,j].set_xlabel("Temps (s)")
+        axs[1,j].legend(); axs[1,j].grid(alpha=0.3)
+
+    fig3.suptitle(f"{subject} — {task}-pelvis", fontsize=16)
+    fig3.tight_layout(rect=[0, 0.03, 1, 0.95])
+
     plt.show()
 
 
-    n_dofs      = 12
-    dof_raw     = np.degrees(q_ref_raw[:, 7:7+n_dofs])
-    dof_filt    = np.degrees(q_ref[:,    7:7+n_dofs])
-    dof_names   = joint_names[7:7+n_dofs]
 
+    n_dofs      = 12
+    dof_raw     = np.degrees(q_ref_raw[:, 7:7+6])
+    last_6 = q_ref_raw[:, -6:]
+    dof_raw = np.concatenate((dof_raw,last_6),axis=1)
+
+    dof_filt    = np.degrees(q_ref[:,    7:7+6])
+    last_6_filt = q_ref[:, -6:]
+    dof_filt = np.concatenate((dof_filt,last_6_filt),axis=1)
+
+    dof_names   = joint_names[7:7+6] + joint_names[-6:]  
+    
     n_cols_fig  = 4
     n_rows_fig  = int(np.ceil(n_dofs / n_cols_fig))
 
@@ -181,11 +330,14 @@ def process_subject_task(subject, task):
                                figsize=(18, 4*n_rows_fig), sharex=True)
     axs2 = axs2.flatten()
 
+    dof_raw = dof_raw[:cut]
+    dof_filt = dof_filt[:cut]
+
     for k in range(n_dofs):
         axs2[k].plot(time, dof_raw[:,k],  color='red',label='raw')
         axs2[k].plot(time, dof_filt[:,k], color='black',label='filtered')
         axs2[k].set_title(dof_names[k], fontsize=10)
-        axs2[k].set_ylabel("Angle rad)")
+        axs2[k].set_ylabel("Angle deg)")
         axs2[k].grid(alpha=0.3)
         if k >= (n_rows_fig - 1) * n_cols_fig:
             axs2[k].set_xlabel("Temps (s)")
@@ -201,6 +353,35 @@ def process_subject_task(subject, task):
     # plt.close(fig2)
     # print(f"  Saved: {out2}")
     plt.show()
+
+    save_dir = os.path.join(BASE_DATA_DIR, subject, task)
+    os.makedirs(save_dir, exist_ok=True)
+
+    kinetics_filtered_df = pd.DataFrame({
+        'Fx1': pf1_forces_pelvis[:cut,0],
+        'Fy1': pf1_forces_pelvis[:cut,1],
+        'Fz1': pf1_forces_pelvis[:cut,2],
+        'Mx1': pf1_moments_pelvis[:cut,0],
+        'My1': pf1_moments_pelvis[:cut,1],
+        'Mz1': pf1_moments_pelvis[:cut,2],
+
+        'Fx2': pf2_forces_pelvis[:cut,0],
+        'Fy2': pf2_forces_pelvis[:cut,1],
+        'Fz2': pf2_forces_pelvis[:cut,2],
+        'Mx2': pf2_moments_pelvis[:cut,0],
+        'My2': pf2_moments_pelvis[:cut,1],
+        'Mz2': pf2_moments_pelvis[:cut,2],
+    })
+
+    kinetics_file = os.path.join(save_dir, "kinetics_filtered.csv")
+    kinetics_filtered_df.to_csv(kinetics_file, index=False)
+    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
+
+    # --- Sauvegarde joints filtrés ---
+    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
+    joints_file = os.path.join(save_dir, "joints_filtered.csv")
+    joints_filtered_df.to_csv(joints_file, index=False)
+    print(f"  Saved filtered joints: {joints_file}")
 
 
 
