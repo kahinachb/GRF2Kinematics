@@ -180,41 +180,100 @@ def build_datasets(
     npy_root:       str,
     seq_len:        int   = 128,
     stride:         Optional[int] = None,
-    val_ratio:      float = 0.15,
+    val_ratio:      float = 0.20,
     norm_save_path: Optional[str] = None,
+    val_subjects:   Optional[List[str]] = None,
 ) -> Tuple["MotionDiffusionDataset", "MotionDiffusionDataset",
            Normalizer, Normalizer]:
     """
     Load all trials, fit normalizers on the training split, and return
     (train_dataset, val_dataset, joint_normalizer, kinetics_normalizer).
 
+    Split strategy: **subject-level** — all trials from a given subject go
+    entirely to train OR val, never both.  This prevents data leakage and
+    evaluates generalization to unseen subjects.
+
     Args:
-        npy_root       : path to the npy/ folder produced by convert_to_npy.py
-        seq_len        : window length in frames
-        stride         : stride between windows (default: seq_len // 2)
-        val_ratio      : fraction of trials used for validation
-        norm_save_path : if given, save normalizers as <path>_joints.npz / _kinetics.npz
+        npy_root      : path to the npy/ folder produced by convert_to_npy.py
+        seq_len       : window length in frames
+        stride        : stride between windows (default: seq_len // 2)
+        val_ratio     : fraction of *subjects* held out for validation
+        norm_save_path: if given, save normalizers as <path>_joints.npz / _kinetics.npz
+        val_subjects  : optional explicit list of subject names for validation,
+                        e.g. ["S03", "S07"].  Overrides val_ratio if provided.
     """
     npy_root = Path(npy_root)
-    joints_list, kinetics_list = load_all_trials(npy_root)
 
-    # Trial-level train / val split (split by trial, not by frame)
-    n_total = len(joints_list)
-    n_val   = max(1, int(n_total * val_ratio))
-    n_train = n_total - n_val
+    # ── Collect trials with their subject identity ───────────────────────────
+    pairs = _find_trial_paths(npy_root)
 
-    # Shuffle consistently
-    rng   = np.random.default_rng(seed=42)
-    order = rng.permutation(n_total).tolist()
-    train_idx = order[:n_train]
-    val_idx   = order[n_train:]
+    # Subject key = "<dataset>/<subject>" to avoid collisions across datasets
+    # Path structure: npy/<dataset>/<subject>/<task>/
+    subject_to_trials: dict = {}
+    for jp, kp in pairs:
+        subject_key = f"{jp.parent.parent.parent.name}/{jp.parent.parent.name}"
+        subject_to_trials.setdefault(subject_key, []).append((jp, kp))
 
-    train_j = [joints_list[i]   for i in train_idx]
-    train_k = [kinetics_list[i] for i in train_idx]
-    val_j   = [joints_list[i]   for i in val_idx]
-    val_k   = [kinetics_list[i] for i in val_idx]
+    all_subjects = sorted(subject_to_trials.keys())
+    print(f"  [Dataset] {len(all_subjects)} subject(s) found across all datasets:")
+    for s in all_subjects:
+        n = len(subject_to_trials[s])
+        print(f"             {s}  ({n} trial{'s' if n > 1 else ''})")
 
-    print(f"  [Dataset] Train trials: {len(train_j)} | Val trials: {len(val_j)}")
+    # ── Subject-level train / val split ─────────────────────────────────────
+    if val_subjects is not None:
+        # Explicit subject list provided
+        val_subj_set = set(val_subjects)
+        unknown = val_subj_set - set(all_subjects)
+        if unknown:
+            raise ValueError(f"Unknown val_subjects: {unknown}. "
+                             f"Available: {all_subjects}")
+        train_subj = [s for s in all_subjects if s not in val_subj_set]
+        val_subj   = [s for s in all_subjects if s in val_subj_set]
+    else:
+        # ── Stratified split: at least one subject per dataset in val ────────
+        # Group subjects by dataset (first part of "<dataset>/<subject>")
+        dataset_to_subj: dict = {}
+        for s in all_subjects:
+            ds = s.split("/")[0]
+            dataset_to_subj.setdefault(ds, []).append(s)
+
+        rng        = np.random.default_rng(seed=42)
+        val_subj   = []
+        train_subj = []
+
+        for ds, subj_list in sorted(dataset_to_subj.items()):
+            shuffled   = rng.permutation(subj_list).tolist()
+            # Always hold out at least 1 subject; more if val_ratio demands it
+            n_val_ds   = max(1, round(len(shuffled) * val_ratio))
+            # But never leave the dataset with 0 training subjects
+            n_val_ds   = min(n_val_ds, len(shuffled) - 1)
+            val_subj  += shuffled[:n_val_ds]
+            train_subj+= shuffled[n_val_ds:]
+            print(f"             {ds}: {len(shuffled)} subject(s) → "
+                  f"{len(shuffled)-n_val_ds} train / {n_val_ds} val  "
+                  f"[val: {shuffled[:n_val_ds]}]")
+
+    print(f"\n  [Dataset] Train subjects ({len(train_subj)}): {train_subj}")
+    print(f"  [Dataset] Val   subjects ({len(val_subj)}):   {val_subj}\n")
+
+    # ── Collect arrays per split ─────────────────────────────────────────────
+    def _load_split(subjects):
+        joints_l, kinetics_l = [], []
+        for s in subjects:
+            for jp, kp in subject_to_trials[s]:
+                j = np.load(jp).astype(np.float32)
+                k = np.load(kp).astype(np.float32)
+                n = min(len(j), len(k))
+                joints_l.append(j[:n])
+                kinetics_l.append(k[:n])
+        return joints_l, kinetics_l
+
+    train_j, train_k = _load_split(train_subj)
+    val_j,   val_k   = _load_split(val_subj)
+
+    print(f"  [Dataset] Train: {len(train_j)} trial(s) | "
+          f"Val: {len(val_j)} trial(s)")
 
     # Fit normalizers on training data only
     joint_norm    = Normalizer()

@@ -20,7 +20,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from utils.diffuser_utils   import DDPM, DiffusionTransformer
+from model   import DDPM, DiffusionTransformer
 from dataset import build_datasets
 
 
@@ -120,7 +120,11 @@ def main():
     parser.add_argument("--npy-root",   required=True, help="Path to the npy/ folder")
     parser.add_argument("--seq-len",    type=int,   default=128,  help="Window size in frames (default 128 = 1.28 s)")
     parser.add_argument("--stride",     type=int,   default=None, help="Stride between windows (default seq_len//2)")
-    parser.add_argument("--val-ratio",  type=float, default=0.15, help="Fraction of trials used for validation")
+    parser.add_argument("--val-ratio",    type=float, default=0.20,
+                        help="Fraction of subjects held out for validation (default 0.20)")
+    parser.add_argument("--val-subjects", nargs="+",  default=None,
+                        help="Explicit val subject names, e.g. --val-subjects Anais/S03 Vinc/S02. "
+                             "Overrides --val-ratio if provided.")
     # Model
     parser.add_argument("--embed-dim",  type=int,   default=256,  help="Transformer embedding dimension")
     parser.add_argument("--nhead",      type=int,   default=8,    help="Number of attention heads")
@@ -161,6 +165,7 @@ def main():
         stride         = args.stride,
         val_ratio      = args.val_ratio,
         norm_save_path = norm_prefix,
+        val_subjects   = args.val_subjects,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size,
