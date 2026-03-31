@@ -150,7 +150,6 @@ class DiffusionTransformerConcat(nn.Module):
 # ─────────────────────────────────────────────────────────────────────────────
 # SINUSOIDAL TIME EMBEDDING
 # ─────────────────────────────────────────────────────────────────────────────
-
 class SinusoidalTimeEmbedding(nn.Module):
     """
     Sinusoidal positional encoding for the diffusion timestep,
@@ -164,7 +163,7 @@ class SinusoidalTimeEmbedding(nn.Module):
             nn.SiLU(),
             nn.Linear(embed_dim * 4, embed_dim),
         )
-
+ 
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -182,16 +181,21 @@ class SinusoidalTimeEmbedding(nn.Module):
         args   = t[:, None] * freqs[None] * 1_000   # rescale [0,1] → [0,1000]
         emb    = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)
         return self.mlp(emb)                         # (B, embed_dim)
-
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# DIFFUSION TRANSFORMER
+# ─────────────────────────────────────────────────────────────────────────────
+ 
 class DiffusionTransformer(nn.Module):
     """
     Transformer-based denoising network for the DDPM reverse process.
-
+ 
     Conditioning strategy: at each position the force/moment embedding
     is added to the joint embedding (element-wise), so the model sees
     the kinetics context at every frame.  The time embedding is broadcast
     over the whole sequence.
-
+ 
     Architecture choices vs. your original:
       • joint_dim 12 → 29   (all joints, no freeflyer)
       • sinusoidal time embedding instead of a plain linear
@@ -200,32 +204,32 @@ class DiffusionTransformer(nn.Module):
       • dim_feedforward = 4 × embed_dim  (standard Transformer ratio)
       • num_layers 4 → 6  (slightly deeper; easy to tune down)
     """
-
+ 
     def __init__(
         self,
         joint_dim:  int = 29,     # all_joints DOFs (no freeflyer)
         force_dim:  int = 12,     # kinetics channels (R+L plates)
-        embed_dim:  int = 256,
-        nhead:      int = 8,
-        num_layers: int = 6,
+        embed_dim:  int = 128,    # reduced from 256 → fewer params
+        nhead:      int = 4,      # reduced from 8  (must divide embed_dim)
+        num_layers: int = 4,      # reduced from 6
         seq_len:    int = 128,    # window size in frames (128 frames = 1.28 s @ 100 Hz)
         dropout:    float = 0.1,
     ):
         super().__init__()
         self.joint_dim = joint_dim
         self.seq_len   = seq_len
-
+ 
         # ── Input projections ─────────────────────────────────────────────
         self.joint_embed = nn.Linear(joint_dim, embed_dim)
         self.force_embed = nn.Linear(force_dim, embed_dim)
-
+ 
         # ── Time embedding ────────────────────────────────────────────────
         self.time_embed = SinusoidalTimeEmbedding(embed_dim)
-
+ 
         # ── Learnable positional encoding ─────────────────────────────────
         self.pos_embed = nn.Parameter(torch.zeros(1, seq_len, embed_dim))
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
-
+ 
         # ── Transformer encoder ───────────────────────────────────────────
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -236,15 +240,15 @@ class DiffusionTransformer(nn.Module):
             norm_first=True,     # Pre-LN: more stable training
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-
+ 
         # ── Output head ───────────────────────────────────────────────────
         self.output_head = nn.Sequential(
             nn.LayerNorm(embed_dim),
             nn.Linear(embed_dim, joint_dim),
         )
-
+ 
         self._init_weights()
-
+ 
     def _init_weights(self):
         """Small-scale initialization for stable early training."""
         for module in self.modules():
@@ -252,7 +256,7 @@ class DiffusionTransformer(nn.Module):
                 nn.init.trunc_normal_(module.weight, std=0.02)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
-
+ 
     def forward(
         self,
         x:    torch.Tensor,   # (B, T, joint_dim)  noisy joint angles
@@ -263,10 +267,10 @@ class DiffusionTransformer(nn.Module):
         Predict the noise eps_theta(x_t, t, cond).
         """
         B, T, _ = x.shape
-
+ 
         # Time embedding: (B, embed_dim) → broadcast over sequence → (B, 1, embed_dim)
         t_emb = self.time_embed(t).unsqueeze(1)          # (B, 1, D)
-
+ 
         # Combine all signals at the token level
         tokens = (
             self.joint_embed(x)          # (B, T, D)  noisy joints
@@ -274,6 +278,6 @@ class DiffusionTransformer(nn.Module):
             + t_emb                      # (B, 1, D)  timestep (broadcast)
             + self.pos_embed[:, :T, :]   # (1, T, D)  position
         )
-
+ 
         out = self.transformer(tokens)   # (B, T, D)
         return self.output_head(out)     # (B, T, joint_dim)

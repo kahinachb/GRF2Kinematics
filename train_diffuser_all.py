@@ -20,7 +20,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from model   import DDPM, DiffusionTransformer
+from utils.diffuser_utils   import DDPM, DiffusionTransformer
 from dataset import build_datasets
 
 
@@ -126,9 +126,9 @@ def main():
                         help="Explicit val subject names, e.g. --val-subjects Anais/S03 Vinc/S02. "
                              "Overrides --val-ratio if provided.")
     # Model
-    parser.add_argument("--embed-dim",  type=int,   default=256,  help="Transformer embedding dimension")
-    parser.add_argument("--nhead",      type=int,   default=8,    help="Number of attention heads")
-    parser.add_argument("--num-layers", type=int,   default=6,    help="Number of Transformer encoder layers")
+    parser.add_argument("--embed-dim",  type=int,   default=128,  help="Transformer embedding dimension (default 128)")
+    parser.add_argument("--nhead",      type=int,   default=4,    help="Number of attention heads (default 4, must divide embed-dim)")
+    parser.add_argument("--num-layers", type=int,   default=4,    help="Number of Transformer encoder layers (default 4)")
     parser.add_argument("--dropout",    type=float, default=0.1,  help="Dropout probability")
     # DDPM
     parser.add_argument("--n-steps",    type=int,   default=1000, help="Number of diffusion steps")
