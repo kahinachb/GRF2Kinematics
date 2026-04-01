@@ -120,11 +120,15 @@ def main():
     parser.add_argument("--npy-root",   required=True, help="Path to the npy/ folder")
     parser.add_argument("--seq-len",    type=int,   default=128,  help="Window size in frames (default 128 = 1.28 s)")
     parser.add_argument("--stride",     type=int,   default=None, help="Stride between windows (default seq_len//2)")
-    parser.add_argument("--val-ratio",    type=float, default=0.20,
-                        help="Fraction of subjects held out for validation (default 0.20)")
+    parser.add_argument("--val-ratio",    type=float, default=0.15,
+                        help="Fraction of subjects per dataset held out for val (default 0.15)")
+    parser.add_argument("--test-ratio",   type=float, default=0.15,
+                        help="Fraction of subjects per dataset held out for test (default 0.15)")
     parser.add_argument("--val-subjects", nargs="+",  default=None,
                         help="Explicit val subject names, e.g. --val-subjects Anais/S03 Vinc/S02. "
                              "Overrides --val-ratio if provided.")
+    parser.add_argument("--test-subjects",nargs="+",  default=None,
+                        help="Explicit test subject names. Overrides --test-ratio if provided.")
     # Model
     parser.add_argument("--embed-dim",  type=int,   default=128,  help="Transformer embedding dimension (default 128)")
     parser.add_argument("--nhead",      type=int,   default=4,    help="Number of attention heads (default 4, must divide embed-dim)")
@@ -159,19 +163,24 @@ def main():
 
     # ── Datasets & DataLoaders ───────────────────────────────────────────────
     norm_prefix = str(out_dir / "normalizer")
-    train_ds, val_ds, joint_norm, kinetics_norm = build_datasets(
+    train_ds, val_ds, test_ds, joint_norm, kinetics_norm = build_datasets(
         npy_root       = args.npy_root,
         seq_len        = args.seq_len,
         stride         = args.stride,
         val_ratio      = args.val_ratio,
+        test_ratio     = args.test_ratio,
         norm_save_path = norm_prefix,
         val_subjects   = args.val_subjects,
+        test_subjects  = args.test_subjects,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size,
                               shuffle=True,  num_workers=args.num_workers,
                               pin_memory=True, drop_last=True)
     val_loader   = DataLoader(val_ds,   batch_size=args.batch_size,
+                              shuffle=False, num_workers=args.num_workers,
+                              pin_memory=True)
+    test_loader  = DataLoader(test_ds,  batch_size=args.batch_size,
                               shuffle=False, num_workers=args.num_workers,
                               pin_memory=True)
 
@@ -194,7 +203,8 @@ def main():
     n_params = count_parameters(model)
     print(f"\n  Model parameters : {n_params:,}")
     print(f"  Train windows    : {len(train_ds):,}")
-    print(f"  Val windows      : {len(val_ds):,}\n")
+    print(f"  Val   windows    : {len(val_ds):,}")
+    print(f"  Test  windows    : {len(test_ds):,}\n")
 
     # ── Optimizer & Scheduler ────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(),
@@ -270,6 +280,28 @@ def main():
     with open(history_path, "w") as f:
         json.dump(history, f)
     print(f"\n  Training complete.  Best val loss: {best_val:.6f}")
+
+    # ── Final evaluation on the test set ─────────────────────────────────────
+    # Load the best checkpoint before evaluating
+    print(f"\n  Loading best checkpoint for test evaluation...")
+    best_ckpt = torch.load(out_dir / "best.pt", map_location=device)
+    model.load_state_dict(best_ckpt["model"])
+    test_loss = evaluate(model, ddpm, test_loader, device)
+    print(f"\n{'═'*52}")
+    print(f"  TEST SET EVALUATION  (unseen subjects)")
+    print(f"{'═'*52}")
+    print(f"  Best val loss  : {best_val:.6f}")
+    print(f"  Test loss      : {test_loss:.6f}")
+    gap = test_loss - best_val
+    print(f"  Gap (test-val) : {gap:+.6f}"
+          f"  {'⚠ possible overfit' if gap > 0.01 else '✓ consistent'}")
+    print(f"{'═'*52}\n")
+
+    # Append test loss to history
+    history["test_loss"] = test_loss
+    with open(history_path, "w") as f:
+        json.dump(history, f)
+
     print(f"  Checkpoints saved in: {out_dir}/\n")
 
 

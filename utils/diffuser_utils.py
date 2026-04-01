@@ -209,9 +209,9 @@ class DiffusionTransformer(nn.Module):
         self,
         joint_dim:  int = 29,     # all_joints DOFs (no freeflyer)
         force_dim:  int = 12,     # kinetics channels (R+L plates)
-        embed_dim:  int = 128,    # reduced from 256 → fewer params
-        nhead:      int = 4,      # reduced from 8  (must divide embed_dim)
-        num_layers: int = 4,      # reduced from 6
+        embed_dim:  int = 128,    # 
+        nhead:      int = 4,      
+        num_layers: int = 4,      
         seq_len:    int = 128,    # window size in frames (128 frames = 1.28 s @ 100 Hz)
         dropout:    float = 0.1,
     ):
