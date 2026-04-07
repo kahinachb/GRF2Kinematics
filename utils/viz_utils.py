@@ -33,6 +33,9 @@ def place(viewer, name, pos):
     T = tf.translation_matrix(pos)
     viewer[f"world/{name}"].set_transform(T)
 
+# def place(viz_human, name, pos):
+#     T = tf.translation_matrix(pos)
+#     viz_human.viewer[f"world/{name}"].set_transform(T)
 
 def add_sphere(vis, path, radius=0.01, color=0x0000ff):
     """Add a colored sphere to Meshcat."""

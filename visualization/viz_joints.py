@@ -19,14 +19,14 @@ from utils.viz_utils import add_sphere, place,set_tf, safe_place
 from pinocchio import Quaternion
 
 
-subject = 'Vincent'
+subject = 'Kahina'
 
-task = 'Trial109'
-which = 'Vinc'
+task = 'squat'
+which = 'HUMANOIDS'
 fps = 100 
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']

@@ -281,3 +281,31 @@ class DiffusionTransformer(nn.Module):
  
         out = self.transformer(tokens)   # (B, T, D)
         return self.output_head(out)     # (B, T, joint_dim)
+    
+
+class MotionPredictor(nn.Module):
+    def __init__(self, joint_dim=29, force_dim=12,
+                 embed_dim=128, nhead=4, num_layers=4, dropout=0.1):
+        super().__init__()
+
+        # Project kinetics into embedding space
+        self.input_proj = nn.Linear(force_dim, embed_dim)
+
+        # Positional encoding
+        self.pos_enc = nn.Parameter(torch.randn(1, 512, embed_dim))
+
+        # Transformer encoder
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim, nhead=nhead,
+            dropout=dropout, batch_first=True
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Project back to joint space
+        self.output_proj = nn.Linear(embed_dim, joint_dim)
+
+    def forward(self, kinetics):  # (B, T, 12)
+        x = self.input_proj(kinetics)               # (B, T, embed_dim)
+        x = x + self.pos_enc[:, :x.size(1), :]     # add positional info
+        x = self.encoder(x)                         # (B, T, embed_dim)
+        return self.output_proj(x)                  # (B, T, 29)
