@@ -24,7 +24,7 @@ from typing import Optional
 
 from utils.diffuser_utils  import DDPM, DiffusionTransformer
 from dataset import Normalizer
-
+from joints_limits import get_limit_tensors, joint_limits
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOAD TRAINED MODEL
@@ -36,8 +36,8 @@ def load_model(checkpoint_path: str, device: torch.device):
     args = ckpt["args"]
 
     model = DiffusionTransformer(
-        joint_dim  = 29,
-        force_dim  = 12,
+        joint_dim  = 35,
+        force_dim  = 18,
         embed_dim  = args["embed_dim"],
         nhead      = args["nhead"],
         num_layers = args["num_layers"],
@@ -83,8 +83,8 @@ def generate_trial(
     Args:
         n_samples : number of independent samples to generate
     Returns:
-        joints_pred : (n_samples, T, 29)  — all samples stacked
-                      (n_samples=1) → still (1, T, 29) for consistency
+        joints_pred : (n_samples, T, len(dofs))  — all samples stacked
+                      (n_samples=1) → still (1, T, len(dofs) for consistency
     """
     T     = len(kinetics_raw)
     k_norm = kinetics_norm.transform(kinetics_raw)   # (T, 12)
@@ -92,7 +92,7 @@ def generate_trial(
     all_samples = []   # will collect n_samples arrays of shape (T, 29)
 
     for sample_idx in range(n_samples):
-        pred_acc   = np.zeros((T, 29), dtype=np.float32)
+        pred_acc   = np.zeros((T, 35), dtype=np.float32)
         weight_acc = np.zeros((T, 1),  dtype=np.float32)
         # win        = np.hanning(seq_len).reshape(-1, 1).astype(np.float32)
         win = np.ones((seq_len, 1), dtype=np.float32)
@@ -102,12 +102,12 @@ def generate_trial(
             end   = min(start + seq_len, T)
             chunk = end - start
 
-            k_chunk          = np.zeros((seq_len, 12), dtype=np.float32)
+            k_chunk          = np.zeros((seq_len, 18), dtype=np.float32)
             k_chunk[:chunk]  = k_norm[start:end]
             k_tensor         = torch.from_numpy(k_chunk).unsqueeze(0).to(device)
 
             # Each call to generate() draws fresh Gaussian noise → different sample
-            x_gen = ddpm.generate(model, k_tensor, joint_dim=29)
+            x_gen = ddpm.generate(model, k_tensor, joint_dim=35)
             x_gen = joint_norm.inverse_transform(x_gen.squeeze(0).cpu().numpy())
 
             pred_acc[start:end]   += x_gen[:chunk] * win[:chunk]
@@ -122,18 +122,114 @@ def generate_trial(
 
     return np.stack(all_samples, axis=0)   # (n_samples, T, 29)
 
+def generate_trial_guidance(
+    model:         DiffusionTransformer,
+    ddpm:          DDPM,
+    kinetics_raw:  np.ndarray,
+    kinetics_norm: Normalizer,
+    joint_norm:    Normalizer,
+    seq_len:       int,
+    device:        torch.device,
+    joint_limits:  dict,      # <--- Ajoute ceci
+    overlap:       int = 32,
+    n_samples:     int = 1,
+    guidance_scale: float = 0.5 # <--- Optionnel: pour pouvoir l'ajuster facilement
+) -> np.ndarray:
+    
+    T      = len(kinetics_raw)
+    # Assure-toi que k_norm contient bien tes 18 colonnes (forces+moments+cop)
+    k_norm = kinetics_norm.transform(kinetics_raw)   
+
+    all_samples = []
+
+    for sample_idx in range(n_samples):
+        pred_acc   = np.zeros((T, 35), dtype=np.float32)
+        weight_acc = np.zeros((T, 1),  dtype=np.float32)
+        win        = np.ones((seq_len, 1), dtype=np.float32)
+
+        start = 0
+        while start < T:
+            end   = min(start + seq_len, T)
+            chunk = end - start
+
+            # Préparation du chunk de conditionnement (18 colonnes)
+            k_chunk          = np.zeros((seq_len, 18), dtype=np.float32)
+            k_chunk[:chunk]  = k_norm[start:end]
+            k_tensor         = torch.from_numpy(k_chunk).unsqueeze(0).to(device)
+
+            # Appel de la nouvelle méthode avec Guidance
+            x_gen = ddpm.generate_with_guidance(
+                model, 
+                k_tensor, 
+                joint_dim=35, 
+                joint_norm=joint_norm, 
+                joint_limits=joint_limits,
+                guidance_scale=guidance_scale
+            )
+            
+            # Post-processing : on repasse en CPU/Numpy et on dé-normalise
+            x_gen = joint_norm.inverse_transform(x_gen.squeeze(0).cpu().numpy())
+
+            # Accumulation avec fenêtre
+            pred_acc[start:end]   += x_gen[:chunk] * win[:chunk]
+            weight_acc[start:end] += win[:chunk]
+
+            if end == T:
+                break
+            start += seq_len - overlap
+
+        # Moyenne pondérée pour l'overlap
+        weight_acc = np.where(weight_acc < 1e-8, 1.0, weight_acc)
+        all_samples.append(pred_acc / weight_acc)   
+
+    return np.stack(all_samples, axis=0) # (n_samples, T, 35)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OPTIONAL: QUICK COMPARISON PLOT
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _plot_ff_section(joints_gt, joints_pred, title="FF Deltas"):
+    """
+    Plot les 3 deltas de translation et les 3 deltas de rotation (SO3).
+    joints_gt : (T, 35)
+    joints_pred : (n_samples, T, 35)
+    """
+    import matplotlib.pyplot as plt
+    ff_names = ["Delta X (m)", "Delta Y (m)", "Delta Z (m)", 
+                "Rot X (so3)", "Rot Y (so3)", "Rot Z (so3)"]
+    
+    n_samples = joints_pred.shape[0]
+    T = joints_pred.shape[1]
+    time_s = np.arange(T) / 100.0
+    
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), facecolor="white")
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+    axes_flat = axes.flatten()
+
+    for i in range(6):
+        ax = axes_flat[i]
+        # Prediction samples
+        for s in range(n_samples):
+            ax.plot(time_s, joints_pred[s, :, i], color="red", alpha=0.3, label="Pred" if s==0 else "")
+        
+        # Ground Truth
+        if joints_gt is not None:
+            ax.plot(time_s, joints_gt[:, i], color="black", label="GT")
+        
+        ax.set_title(ff_names[i])
+        ax.spines[["top", "right"]].set_visible(False)
+        if i == 0: ax.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 def _plot_all_samples_section(joints_gt, joints_pred, dof_indices, dof_names,
                               title, n_cols=3):
     """
     Figure showing every individual sample vs GT for a subset of DOFs.
 
-    joints_gt   : (T, 29)            ground truth
-    joints_pred : (n_samples, T, 29) all generated samples
+    joints_gt   : (T, len(dofs))            ground truth
+    joints_pred : (n_samples, T, len(dofs)) all generated samples
     """
     import matplotlib.pyplot as plt
 
@@ -195,8 +291,8 @@ def _plot_mean_section(joints_gt, joints_pred, dof_indices, dof_names,
     """
     Figure showing mean prediction ± 1 std vs GT, with per-DOF RMSE badge.
 
-    joints_gt   : (T, 29)
-    joints_pred : (n_samples, T, 29)
+    joints_gt   : (T, len(dofs))
+    joints_pred : (n_samples, T, len(dofs))
     """
     import matplotlib.pyplot as plt
 
@@ -306,8 +402,13 @@ def plot_comparison(joints_gt, joints_pred):
         "R Shoulder Flex/Ext",    "R Shoulder Abd/Add",   "R Shoulder Int/Ext Rot",
         "R Elbow Flex/Ext",       "R Elbow Pron/Sup",
     ]
-    lower_idx = list(range(12))
-    upper_idx = list(range(12, 29))
+
+    _plot_ff_section(joints_gt, joints_pred)
+    # lower_idx = list(range(12))
+    # upper_idx = list(range(12, 29))
+
+    lower_idx = [i + 6 for i in range(12)]
+    upper_idx = [i + 6 for i in range(12, 29)]
 
     # ── Figures 1 & 2 — All individual samples vs GT ─────────────────────────
     _plot_all_samples_section(
@@ -421,8 +522,8 @@ def main():
         print(f"  [Sample] Generating {args.n_samples} sample(s) from {args.kinetics}  "
               f"({len(k_raw)} frames = {len(k_raw)/100:.2f} sec)")
 
-        j_pred = generate_trial(model, ddpm, k_raw, kinetics_norm, joint_norm,
-                                 seq_len, device, overlap=args.overlap,
+        j_pred = generate_trial_guidance(model, ddpm, k_raw, kinetics_norm, joint_norm,
+                                 seq_len, device, joint_limits,overlap=args.overlap,
                                  n_samples=args.n_samples)
         # j_pred : (n_samples, T, 29)
         np.save(args.out, j_pred)

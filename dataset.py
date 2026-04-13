@@ -48,6 +48,15 @@ class Normalizer:
     def inverse_transform(self, data: np.ndarray) -> np.ndarray:
         return data * self.std + self.mean
 
+    def inverse_transform_torch(self, x_tensor):
+        """Inverse transform for PyTorch tensors (supports autograd)."""
+        # On s'assure que mean et std sont des tenseurs sur le bon device
+        device = x_tensor.device
+        mu  = torch.from_numpy(self.mean).to(device).float()
+        sig = torch.from_numpy(self.std).to(device).float()
+        # Formule : x_real = x_norm * std + mean
+        return x_tensor * sig + mu
+
     def save(self, path: str):
         np.savez(path, mean=self.mean, std=self.std)
         print(f"  [Normalizer] Saved → {path}")
