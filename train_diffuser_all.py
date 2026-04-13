@@ -189,7 +189,7 @@ def main():
     # ── Model ────────────────────────────────────────────────────────────────
     model = DiffusionTransformer(
         joint_dim  = 35,
-        force_dim  = 12,
+        force_dim  = 18,
         embed_dim  = args.embed_dim,
         nhead      = args.nhead,
         num_layers = args.num_layers,

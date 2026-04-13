@@ -197,7 +197,7 @@ class DiffusionTransformer(nn.Module):
     over the whole sequence.
  
     Architecture choices vs. your original:
-      • joint_dim 12 → 29   (all joints, no freeflyer)
+      • joint_dim 12 → 35   (all joints,  with freeflyer)
       • sinusoidal time embedding instead of a plain linear
       • learnable positional encoding over the time axis
       • LayerNorm + linear output head (more stable at the start)
@@ -207,7 +207,7 @@ class DiffusionTransformer(nn.Module):
  
     def __init__(
         self,
-        joint_dim:  int = 29,     # all_joints DOFs (no freeflyer)
+        joint_dim:  int = 35,     # all_joints DOFs (no freeflyer)
         force_dim:  int = 12,     # kinetics channels (R+L plates)
         embed_dim:  int = 128,    # 
         nhead:      int = 4,      
