@@ -296,7 +296,7 @@ class MotionPredictor(nn.Module):
 
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, nhead=nhead,
+            d_model=embed_dim, nhead=nhead, dim_feedforward=embed_dim * 2,
             dropout=dropout, batch_first=True
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)

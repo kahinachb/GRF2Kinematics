@@ -17,16 +17,15 @@ import pinocchio as pin
 import numpy as np
 from utils.viz_utils import add_sphere, place,set_tf, safe_place, place
 from pinocchio import Quaternion
-# import example_robot_data as robex
+import example_robot_data as robex
 
-subject = 'subject01'
-
-task = 'bend'
 which = 'Anais'
+subject = 'subject01'
+task = 'walk'
 
 
 # urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
-urdf_path = f'/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
+# urdf_path = f'/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 
 path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
@@ -98,12 +97,12 @@ mks_names = start_sample_dict.keys()
 
 urdf_name = "human.urdf"
 urdf_meshes_path = "motif/model/human_urdf"
-model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
-# human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
-# model_h = human.model
-# data_h = human.data
-# coll_h = human.collision_model
-# vis_h = human.visual_model
+# model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
+human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
+model_h = human.model
+data_h = human.data
+coll_h = human.collision_model
+vis_h = human.visual_model
 
 
 ################################################################################LOCK JOINTS
@@ -124,6 +123,8 @@ model_h, vis_h = pin.buildReducedModel(
 print(model_h.nq)
 data_h = pin.Data(model_h)
 # ###############################################################################################################
+
+
 
 data_h = model_h.createData()
 #Meshcat
@@ -153,31 +154,36 @@ native_viz["/Grid"].set_transform(
 )
 
 
-angle = np.pi / 2 
+
+
+q0 = pin.neutral(model_h)
+viz_human.display(q0)
+
+pin.forwardKinematics(model_h, data_h, q0)
+markers_fk = {}
+
+angle = -np.pi / 2 
 R_corr = np.array([[1, 0,           0          ],
                    [0, np.cos(angle), -np.sin(angle)],
                    [0, np.sin(angle),  np.cos(angle)]])
 
-q0 = pin.neutral(model_h)
-viz_human.display(q0)
-pin.forwardKinematics(model_h, data_h, q0)
-markers_fk = {}
 
 data_list = []
 for i in range(len(q_ref)):
     frame_data = {}
-    # q_current = q_ref_df.iloc[i].to_numpy()
-    # pos_bassin_rnea = q_current[0:3]
-    # quat_bassin = q_current[3:7] # qx, qy, qz, qw
 
-    # quat_original = pin.Quaternion(q_current[6], q_current[3], q_current[4], q_current[5]) #(w,x,y,z) or : q_current[3:7]
-    # R_original = quat_original.toRotationMatrix()
+    q_current = q_ref_df.iloc[i].to_numpy()
+    pos_bassin_rnea = q_current[0:3]
+    quat_bassin = q_current[3:7] # qx, qy, qz, qw
 
-    # R_final =R_original @ R_corr
-    # quat_final = pin.Quaternion(R_final)
+    quat_original = pin.Quaternion(q_current[6], q_current[3], q_current[4], q_current[5]) #(w,x,y,z) or : q_current[3:7]
+    R_original = quat_original.toRotationMatrix()
+
+    R_final = R_corr @ R_original 
+    quat_final = pin.Quaternion( R_final)
     
-    # q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
-    # q_ref[i][0:3] = R_corr @ q_current[0:3]
+    q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    q_ref[i][0:3] = R_corr @ q_current[0:3]
 
     pos = pin.forwardKinematics(model_h, data_h, q_ref[i])
     pin.updateFramePlacements(model_h, data_h)

@@ -17,30 +17,28 @@ import pinocchio as pin
 import numpy as np
 from utils.viz_utils import add_sphere, place,set_tf, safe_place
 from pinocchio import Quaternion
+import example_robot_data as robex
 
 
-subject = 'Kahina'
+subject = 'subject01'
 
-task = 'squat'
-which = 'HUMANOIDS'
-fps = 100 
+task = 'dyna'
+which = 'Anais'
+fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+# urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
-q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
-q_ref = q_ref_df.to_numpy(dtype=float)
-q_ref = lowpass_filter(q_ref, cutoff=2, fs=fps)
-for i in range(len(q_ref)):
-    q_quat = q_ref[i, 3:7]
-    q_ref[i, 3:7] = q_quat / np.linalg.norm(q_quat)
 
-if which =='HUMANOIDS':
-    cop_csv = f"DATA/{which}/{subject}/{task}_kinetics_global.csv"
+if which =='HUMANOIDS' or which=='Anais' or which=='Vinc':
+    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
+    q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
+
+    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
     df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 
     X1 = to_m(df_cop[find_col(df_cop, "COPx1_glob")])
@@ -50,52 +48,65 @@ if which =='HUMANOIDS':
     Z1 = np.zeros_like(X1)
     Z2 = np.zeros_like(X1)
 
+    Fx1 = df_cop[find_col(df_cop, "Fx1_glob")]
+    Fy1 = df_cop[find_col(df_cop, "Fy1_glob")]
     Fz1 = df_cop[find_col(df_cop, "Fz1_glob")]
+
+    Fx2 = df_cop[find_col(df_cop, "Fx2_glob")]
+    Fy2 = df_cop[find_col(df_cop, "Fy2_glob")]
     Fz2 = df_cop[find_col(df_cop, "Fz2_glob")]
 
     cop1 = np.stack([X1, Y1, Z1], axis=1)
+
     cop2 = np.stack([X2, Y2, Z2], axis=1)
 
     X1, Y1, Fz1,  X2, Y2,Fz2 = "COPx1_glob","COPy1_glob","Fz1_glob","COPx2_glob","COPy2_glob","Fz2_glob"
     cols_to_filter = [
-                        X1, Y1, Fz1,  X2, Y2,Fz2]
+                        X1]
 
-elif which =='Vinc':
-    cop_csv = f"DATA/{which}/{subject}/{task}_forces.csv"
-    df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
-    X1 = to_m(df_cop[find_col(df_cop, "X1")])
-    Y1 = to_m(df_cop[find_col(df_cop, "Y1")])
-    Z1 = to_m(df_cop[find_col(df_cop, "Z1")])
-    X2 = to_m(df_cop[find_col(df_cop, "X2")])
-    Y2 = to_m(df_cop[find_col(df_cop, "Y2")])
-    Z2 = to_m(df_cop[find_col(df_cop, "Z2")])
-    cop1 = np.stack([X1, Y1, Z1], axis=1)
-    cop2 = np.stack([X2, Y2, Z2], axis=1)
-    cols_to_filter = [
-    'X1', 'Y1', 'Z1', 'FZ1',  'X2', 'Y2', 'Z2','FZ2']
+# elif which =='Vinc':
+#     path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
+#     q_ref_df = pd.read_csv(path_joint)
+#     cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+#     df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
+#     X1 = to_m(df_cop[find_col(df_cop, "X1")])
+#     Y1 = to_m(df_cop[find_col(df_cop, "Y1")])
+#     Z1 = to_m(df_cop[find_col(df_cop, "Z1")])
+
+#     X2 = to_m(df_cop[find_col(df_cop, "X2")])
+#     Y2 = to_m(df_cop[find_col(df_cop, "Y2")])
+#     Z2 = to_m(df_cop[find_col(df_cop, "Z2")])
+#     cop1 = np.stack([X1, Y1, Z1], axis=1)
+#     cop2 = np.stack([X2, Y2, Z2], axis=1)
+#     cols_to_filter = [
+#     'X1', 'Y1', 'Z1', 'FZ1',  'X2', 'Y2', 'Z2','FZ2']
     
-else : 
-    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics.csv"
-    df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
+# else : 
+#     path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
+#     q_ref_df = pd.read_csv(path_joint)
+#     cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+#     df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 
-    X1 = to_m(df_cop[find_col(df_cop, "CoP1_x")])
-    Y1 = to_m(df_cop[find_col(df_cop, "CoP1_y")])
-    Z1 = to_m(df_cop[find_col(df_cop, "CoP1_z")])
-    X2 = to_m(df_cop[find_col(df_cop, "CoP2_x")])
-    Y2 = to_m(df_cop[find_col(df_cop, "CoP2_y")])
-    Z2 = to_m(df_cop[find_col(df_cop, "CoP2_z")])
+#     X1 = to_m(df_cop[find_col(df_cop, "CoP1_x")])
+#     Y1 = to_m(df_cop[find_col(df_cop, "CoP1_y")])
+#     Z1 = to_m(df_cop[find_col(df_cop, "CoP1_z")])
+#     X2 = to_m(df_cop[find_col(df_cop, "CoP2_x")])
+#     Y2 = to_m(df_cop[find_col(df_cop, "CoP2_y")])
+#     Z2 = to_m(df_cop[find_col(df_cop, "CoP2_z")])
 
-    cop1 = np.stack([X1, Y1, Z1], axis=1)
-    cop2 = np.stack([X2, Y2, Z2], axis=1)
+#     cop1 = np.stack([X1, Y1, Z1], axis=1)
+#     cop2 = np.stack([X2, Y2, Z2], axis=1)
 
-    cols_to_filter = [
-    'CoP1_x', 'CoP1_y', 'CoP1_z', 'Fz1',  'CoP2_x', 'CoP2_y', 'CoP2_z','Fz2']
+#     cols_to_filter = [
+#     'CoP1_x', 'CoP1_y', 'CoP1_z', 'Fz1',  'CoP2_x', 'CoP2_y', 'CoP2_z','Fz2']
 
 
-# urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-    
-
+q_ref = q_ref_df.to_numpy(dtype=float)
+q_ref = lowpass_filter(q_ref, cutoff=2, fs=fps)
+for i in range(len(q_ref)):
+    q_quat = q_ref[i, 3:7]
+    q_ref[i, 3:7] = q_quat / np.linalg.norm(q_quat)
 
 grf_data_filtered = lowpass_filter(df_cop[cols_to_filter].to_numpy(), cutoff=2, fs=fps)
 df_cop = df_cop.copy()
@@ -104,11 +115,56 @@ df_cop[cols_to_filter] = grf_data_filtered
 urdf_name = "human.urdf"
 urdf_meshes_path = "motif/model/human_urdf"
 model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
+
+
+# human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
+# model_h = human.model
+# data_h = human.data
+# coll_h = human.collision_model
+# vis_h = human.visual_model
+
+# quat = pin.Quaternion(pin.rpy.rpyToMatrix(np.deg2rad(90), 0, 0)).coeffs()#set the human model uprigth
+
+
+# ################################################################################LOCK JOINTS
+# all_joint_ids = set(range(1, model_h.njoints))
+# joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z"]
+# joint_ids_to_lock = []
+# for jn in joints_to_lock:
+#     if model_h.existJointName(jn):
+#         joint_ids_to_lock.append(model_h.getJointId(jn))
+#     else:
+#         print('Warning: joint ' + str(jn) + ' does not belong to the model!')
+
+# q0 = pin.neutral(model_h)
+# # Build reduced model
+# model_h, vis_h = pin.buildReducedModel(
+#     model_h, vis_h, joint_ids_to_lock, q0)
+
+# print(model_h.nq)
+# data_h = pin.Data(model_h)
+###############################################################################################################
+
+
 data_h = model_h.createData()
 
-all_names = model_h.names
-print("Tous les noms de joints + segments :")
-print(all_names)
+
+import meshcat.geometry as g
+
+def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
+    """
+    Affiche une ligne partant du COP pour représenter la force.
+    color: format hexadécimal (ex: 0xff0000 pour rouge)
+    """
+    # Calcul du point d'arrivée
+    end_point = cop + (force * scale)
+    
+    # Création des points de la ligne (doit être un array 3x2)
+    points = np.array([cop, end_point]).astype(np.float32).T
+    
+    # Envoi au viewer Meshcat
+    viewer[name].set_object(g.Line(g.PointsGeometry(points), 
+                                   g.LineBasicMaterial(color=color, linewidth=3)))
 
 #Meshcat
 viewer = meshcat.Visualizer()
@@ -118,8 +174,9 @@ viz_human.initViewer(viewer, open=True)
 viz_human.viewer.delete()  # clear if relaunch
 viz_human.loadViewerModel("ref",color=[0.0, 1.0, 0.0, 0.8])
 
-
-
+q0 = pin.neutral(model_h)
+# q0[3:7]=quat
+viz_human.display(q0)
 
 add_sphere(viewer, "world/pos_bassin_RNEA", radius=0.05, color=0xFF0000) 
 meshcat_shapes.frame(viewer["world/pos_bassin_RNEA/frame"], axis_length=0.2)
@@ -127,19 +184,9 @@ meshcat_shapes.frame(viewer["world/pos_bassin_RNEA/frame"], axis_length=0.2)
 # COP
 add_sphere(viewer, "world/COP_right",  radius=0.015, color=0x0000FF)  # bleu 
 add_sphere(viewer, "world/COP_left", radius=0.015, color=0xFF8800)  # orange
-add_sphere(viewer, "world/COP_RNEA",  radius=0.015, color=0xFF0000)  # bleu 
-add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  # orange
+add_sphere(viewer, "world/COP_RNEA",  radius=0.015, color=0xFF0000)  # red 
+add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  # green
 
-
-
-# for geom in vis_h.geometryObjects:
-#     node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
-#     viz_human.viewer[node_name].set_property("visible", False)
-# for geom in vis_h.geometryObjects:
-#     for mesh in meshes:
-#         if mesh in geom.name:   
-#             node_name = viz_human.getViewerNodeName(geom, pin.GeometryType.VISUAL)
-#             viz_human.viewer[node_name].set_property("visible", True)
 
 
 # Background/grid
@@ -169,10 +216,12 @@ for i in range(n_samples - 1):
 for i in range(n_samples - 1):
     a_ref[i, :] = (v_ref[i+1, :] - v_ref[i, :]) / dt
 
-angle = np.pi / 2 
+angle = -np.pi / 2 
 R_corr = np.array([[1, 0,           0          ],
                    [0, np.cos(angle), -np.sin(angle)],
                    [0, np.sin(angle),  np.cos(angle)]])
+
+
 for i in range(len(q_ref)):
 
     q_current = q_ref_df.iloc[i].to_numpy()
@@ -184,7 +233,7 @@ for i in range(len(q_ref)):
 
     T_bassin = np.eye(4)
 
-    R_final =R_original 
+    R_final = R_original 
     quat_final = pin.Quaternion(R_final)
 
     T_bassin[:3, :3] = R_final
@@ -192,8 +241,8 @@ for i in range(len(q_ref)):
     place(viewer, "pos_bassin_RNEA", T_bassin[:3, 3])
     set_tf(viewer, "pos_bassin_RNEA/frame", T_bassin[:3, :3])
     
-    # q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
-    # q_ref[i][0:3] = R_corr @ q_current[0:3]
+    q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    q_ref[i][0:3] =q_current[0:3]
 
     quat = pin.Quaternion(q_ref[i, 3:7])
     rot_base= quat.matrix()
@@ -223,22 +272,65 @@ for i in range(len(q_ref)):
     cop_r = cop1[i]  # (x,y,z)
     cop_l = cop2[i]
 
-    if which == 'HUMANOIDS': 
+    if which == 'HUMANOIDS' or which=='Anais' or which=='Vinc': 
         Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
         Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
-    elif which =='Vinc':
-        Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
-        Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
+
+        Fx_r = df_cop[find_col(df_cop, "Fx1_glob")].values.astype(float)
+        Fx_l = df_cop[find_col(df_cop, "Fx2_glob")].values.astype(float)
+
+        Fy_r = df_cop[find_col(df_cop, "Fy1_glob")].values.astype(float)
+        Fy_l = df_cop[find_col(df_cop, "Fy2_glob")].values.astype(float)
+
+    # elif which =='Vinc':
+    #     Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
+    #     Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
+
+    #     Fx_r = df_cop[find_col(df_cop, "FX1")].values.astype(float)
+    #     Fx_l = df_cop[find_col(df_cop, "FX2")].values.astype(float)
+
+    #     Fy_r = df_cop[find_col(df_cop, "FY1")].values.astype(float)
+    #     Fy_l = df_cop[find_col(df_cop, "FY2")].values.astype(float)
 
         
-    else : 
-        Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
-        Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
+    # else : 
+    #     Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
+    #     Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
+
+    #     Fx_r = df_cop[find_col(df_cop, "Fx1")].values.astype(float)
+    #     Fx_l = df_cop[find_col(df_cop, "Fx2")].values.astype(float)
+
+    #     Fy_r = df_cop[find_col(df_cop, "Fy1")].values.astype(float)
+    #     Fy_l = df_cop[find_col(df_cop, "Fy2")].values.astype(float)
 
     Fz_total = Fz_r + Fz_l
 
     cop_global = (Fz_r[i] * cop_r + Fz_l[i] * cop_l) / Fz_total[i]
 
+        # 1. Préparation des vecteurs (vérifie bien que ce sont des np.array de taille 3)
+    force_r = np.array([Fx_r[i], Fy_r[i], Fz_r[i]])
+    force_l = np.array([Fx_l[i], Fy_l[i], Fz_l[i]])
+
+    # 2. Échelle de la flèche (ex: 1000N = 1m)
+    f_scale = 0.001 
+
+    # Affichage force pied DROIT (Rouge)
+    if abs(Fz_r[i]) > 10.0:
+        draw_force_arrow(viewer, "force_R", cop1[i], force_r, color=0x0000ff, scale=f_scale)
+    else:
+        viewer["force_R"].delete() # Supprime la flèche quand le pied lève
+
+    # Affichage force pied GAUCHE (Bleu)
+    if abs(Fz_l[i]) > 10.0:
+        draw_force_arrow(viewer, "force_L", cop2[i], force_l, color=0xFF8800, scale=f_scale)
+    else:
+        viewer["force_L"].delete()
+
+    # Affichage de la force totale (Vert)
+    force_total = force_r + force_l
+    if abs(Fz_total[i]) > 10.0:
+        draw_force_arrow(viewer, "force_Total", cop_global, force_total, color=0x00ff00, scale=f_scale)
+            
 
     safe_place(viewer,"COP_RNEA", cop_rnea)
     safe_place(viewer, "COP_platform_global", cop_global)

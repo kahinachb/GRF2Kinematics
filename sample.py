@@ -94,7 +94,8 @@ def generate_trial(
     for sample_idx in range(n_samples):
         pred_acc   = np.zeros((T, 29), dtype=np.float32)
         weight_acc = np.zeros((T, 1),  dtype=np.float32)
-        win        = np.hanning(seq_len).reshape(-1, 1).astype(np.float32)
+        # win        = np.hanning(seq_len).reshape(-1, 1).astype(np.float32)
+        win = np.ones((seq_len, 1), dtype=np.float32)
 
         start = 0
         while start < T:
@@ -391,7 +392,7 @@ def main():
     parser.add_argument("--out-dir",    default="generated",            help="Output dir for batch mode")
     # Options
     parser.add_argument("--overlap",    type=int,   default=32,   help="Window overlap for blending (frames)")
-    parser.add_argument("--n-samples",  type=int,   default=4,
+    parser.add_argument("--n-samples",  type=int,   default=1,
                         help="Number of independent samples to generate per trial "
                              "(> 1 exploits multimodality of the diffusion model)")
     parser.add_argument("--plot",       action="store_true",       help="Plot GT vs prediction")

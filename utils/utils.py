@@ -6,9 +6,35 @@ from utils.linear_algebra_utils import col_vector_3D, transform_to_global_frame,
 import yaml
 from utils.model_utils import get_virtual_pelvis_pose
 
+def read_weight(yaml_file):
+    """
+    Read subject information from a YAML file.
+    
+    Parameters:
+    -----------
+    yaml_file : str
+        Path to the subject.yaml file
+        
+    Returns:
+    --------
+    tuple : (height_m, weight_kg) - Height in meters and weight in kilograms
+    """
+    # Read the YAML file
+    with open(yaml_file, 'r') as f:
+        data = yaml.safe_load(f)
+    
+    # Extract height and weight
+    weight_kg = data['weight_kg']
+    
+    print(f"Subject info loaded from: {yaml_file}")
+    print(f"Weight: {weight_kg:.2f} kg")
+    
+    return weight_kg
+
+
 def to_m(vals):
     arr = vals.values.astype(float)
-    return arr / 1000
+    return arr / 1
 def find_col(df, name):
     cols_lower = {c.lower(): c for c in df.columns}
     key = name.lower()

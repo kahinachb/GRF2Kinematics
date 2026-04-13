@@ -52,12 +52,12 @@ def load_checkpoint(path: Path, model, optimizer, scheduler, device):
 # TRAINING LOOP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train_one_epoch(model, ddpm, loader, optimizer, device, epoch):
+def train_one_epoch(model, ddpm, loader, optimizer, device, scheduler):
     model.train()
     total_loss = 0.0
 
     for step, (joints, kinetics) in enumerate(loader):
-        joints   = joints.to(device)    # (B, T, 29)
+        joints   = joints.to(device)    # (B, T, len(dof))
         kinetics = kinetics.to(device)  # (B, T, 12)
         B        = joints.size(0)
 
@@ -65,16 +65,16 @@ def train_one_epoch(model, ddpm, loader, optimizer, device, epoch):
         t = torch.randint(0, ddpm.n_steps, (B,), device=device)
 
         # 2. Sample Gaussian noise
-        noise = torch.randn_like(joints)   # (B, T, 29)
+        noise = torch.randn_like(joints)   # (B, T, len(dof))
 
         # 3. Forward diffusion: corrupt the clean joints
-        x_t = ddpm.sample_forward(joints, t, noise)   # (B, T, 29)
+        x_t = ddpm.sample_forward(joints, t, noise)   # (B, T, len(dof))
 
         # 4. Normalize t to [0, 1] for the model
         t_norm = t.float() / ddpm.n_steps
 
         # 5. Predict the noise
-        eps_pred = model(x_t, t_norm, kinetics)        # (B, T, 29)
+        eps_pred = model(x_t, t_norm, kinetics)        # (B, T, len(dof))
 
         # 6. Simple MSE loss on the noise prediction (DDPM objective)
         loss = F.mse_loss(eps_pred, noise)
@@ -83,8 +83,10 @@ def train_one_epoch(model, ddpm, loader, optimizer, device, epoch):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        scheduler.step()
 
         total_loss += loss.item()
+       #
 
     return total_loss / len(loader)
 
@@ -186,7 +188,7 @@ def main():
 
     # ── Model ────────────────────────────────────────────────────────────────
     model = DiffusionTransformer(
-        joint_dim  = 29,
+        joint_dim  = 35,
         force_dim  = 12,
         embed_dim  = args.embed_dim,
         nhead      = args.nhead,
@@ -239,10 +241,9 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(model, ddpm, train_loader,
-                                     optimizer, device, epoch)
+                                     optimizer, device, scheduler)
         val_loss   = evaluate(model, ddpm, val_loader, device)
-        scheduler.step()   # OneCycleLR: step every batch inside loop handles it
-        # (we called it per-epoch here as a simplified alternative)
+        
 
         elapsed = time.time() - t0
         history["train_loss"].append(train_loss)

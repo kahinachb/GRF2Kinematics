@@ -11,7 +11,7 @@ Expected folder structure:
 
 Output per trial  →  <ROOT>/npy/<dataset>/<subject>/<task>/
     lower_body_joints.npy   : 12 DOFs — right then left (hip, knee, ankle)
-    all_joints.npy          : all DOFs except freeflyer (lower + upper body, 29 DOFs)
+    all_joints.npy          : all_joints.npy : freeflyer + all articulated DOFs
     kinetics.npy            : 12 channels — right plate then left plate
 
 Usage:
@@ -101,11 +101,15 @@ ALL_JOINTS_ANAIS_VINC = LOWER_ANAIS_VINC + UPPER_ANAIS_VINC   # 12 + 17 = 29 DOF
 ALL_JOINTS_HUMANOIDS  = LOWER_HUMANOIDS  + UPPER_HUMANOIDS     # 12 + 17 = 29 DOFs
 ALL_JOINTS_CANONICAL  = LOWER_CANONICAL  + UPPER_CANONICAL     # 29 canonical names
 
+
 # ── Freeflyer columns to exclude ─────────────────────────────────────────────
+
 FF_ANAIS_VINC = ["FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw"]
 FF_HUMANOIDS  = ["root_joint","root_joint.1","root_joint.2",
                  "root_joint.3","root_joint.4","root_joint.5","root_joint.6"]
 
+# FF_ANAIS_VINC = ["delta_x","delta_y","delta_z","delta_rx","delta_ry","delta_rz"]
+# FF_HUMANOIDS  =["delta_x","delta_y","delta_z","delta_rx","delta_ry","delta_rz"]
 # ── Expected full headers (for validation) ───────────────────────────────────
 EXPECTED_JOINTS_ANAIS_VINC = FF_ANAIS_VINC + [
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot","Lknee_flex_ext",
@@ -129,14 +133,17 @@ EXPECTED_JOINTS_HUMANOIDS = FF_HUMANOIDS + [
     "right_hip_Z","right_hip_X","right_hip_Y","right_knee_Z","right_ankle_Z","right_ankle_X",
 ]
 
-EXPECTED_KINETICS = ["Fx1","Fy1","Fz1","Mx1","My1","Mz1","Fx2","Fy2","Fz2","Mx2","My2","Mz2"]
+EXPECTED_KINETICS = ["Fx1","Fy1","Fz1","Mx1","My1","Mz1","Fx2","Fy2","Fz2","Mx2","My2","Mz2", "COPx1","COPy1","COPz1","COPx2","COPy2","COPz2"]
 
 SAMPLING_RATE_HZ = 100  # data acquisition frequency
 
 KINETICS_CANONICAL = [
-    "R Fx (N)", "R Fy (N)", "R Fz (N)", "R Mx (Nm)", "R My (Nm)", "R Mz (Nm)",
-    "L Fx (N)", "L Fy (N)", "L Fz (N)", "L Mx (Nm)", "L My (Nm)", "L Mz (Nm)",
+    "R Fx (N)", "R Fy (N)", "R Fz (N)", "R Mx (Nm)", "R My (Nm)", "R Mz (Nm)","R Copx (m)", "R Copy (m)", "R Copz (m)",
+    "L Fx (N)", "L Fy (N)", "L Fz (N)", "L Mx (Nm)", "L My (Nm)", "L Mz (Nm)","L Copx (m)", "L Copy (m)", "L Copz (m)"
 ]
+
+ALL_JOINTS_WITH_FF_ANAIS_VINC = FF_ANAIS_VINC + ALL_JOINTS_ANAIS_VINC
+ALL_JOINTS_WITH_FF_HUMANOIDS = FF_HUMANOIDS + ALL_JOINTS_HUMANOIDS
 
 # ── Physiological validity ranges ────────────────────────────────────────────
 FORCE_MIN,  FORCE_MAX  = -5000.0,  5000.0   # N
@@ -178,8 +185,8 @@ def _build_kinetics_order(dataset_name):
     """Return kinetics column names in the order: right plate → left plate."""
     cfg  = DATASETS[dataset_name]
     r, l = cfg["right_plate"], cfg["left_plate"]
-    return [f"Fx{r}",f"Fy{r}",f"Fz{r}",f"Mx{r}",f"My{r}",f"Mz{r}",
-            f"Fx{l}",f"Fy{l}",f"Fz{l}",f"Mx{l}",f"My{l}",f"Mz{l}"]
+    return [f"Fx{r}",f"Fy{r}",f"Fz{r}",f"Mx{r}",f"My{r}",f"Mz{r}",f"COPx{r}",f"COPy{r}",f"COPz{r}",
+            f"Fx{l}",f"Fy{l}",f"Fz{l}",f"Mx{l}",f"My{l}",f"Mz{l}",f"COPx{l}",f"COPy{l}",f"COPz{l}",]
 
 
 def _check_range(arr, vmin, vmax, label, path):
@@ -188,6 +195,8 @@ def _check_range(arr, vmin, vmax, label, path):
         return []
     mn, mx = float(np.nanmin(arr)), float(np.nanmax(arr))
     if mn < vmin or mx > vmax:
+        print(label)
+        input()
         return [f"  [RANGE]  {label}: [{mn:.2f}, {mx:.2f}] outside [{vmin}, {vmax}]  →  {path}"]
     return []
 
@@ -209,7 +218,7 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
     Read one trial and produce three .npy files:
         lower_body_joints.npy  — 12 DOFs: right hip/knee/ankle, then left
         all_joints.npy         — 29 DOFs: lower + upper body (no freeflyer)
-        kinetics.npy           — 12 channels: right plate then left plate
+        kinetics.npy           — 18 channels: right plate then left plate
 
     Returns a metadata dict used for the summary report.
     """
@@ -239,7 +248,7 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
     expected_j   = EXPECTED_JOINTS_HUMANOIDS  if is_humanoids else EXPECTED_JOINTS_ANAIS_VINC
     ff_cols      = FF_HUMANOIDS               if is_humanoids else FF_ANAIS_VINC
     lower_cols   = LOWER_HUMANOIDS            if is_humanoids else LOWER_ANAIS_VINC
-    all_cols     = ALL_JOINTS_HUMANOIDS       if is_humanoids else ALL_JOINTS_ANAIS_VINC
+    all_cols     = ALL_JOINTS_WITH_FF_HUMANOIDS       if is_humanoids else ALL_JOINTS_WITH_FF_ANAIS_VINC
 
     # Validate header
     missing_hdr = set(expected_j) - set(actual_cols)
@@ -274,7 +283,6 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
     meta["warnings"] += _check_nan(arr_all,   "all joints angles", joints_path)
     meta["warnings"] += _check_range(arr_lower, ANGLE_MIN, ANGLE_MAX, "lower_body angles (rad)", joints_path)
     meta["warnings"] += _check_range(arr_all,   ANGLE_MIN, ANGLE_MAX, "all joints angles (rad)", joints_path)
-
     # ── Read kinetics ────────────────────────────────────────────────────────
     try:
         df_k = pd.read_csv(kinetics_path)
@@ -303,8 +311,9 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
 
     # Sanity checks on force/moment values
     meta["warnings"] += _check_nan(arr_k, "kinetics", kinetics_path)
-    meta["warnings"] += _check_range(arr_k[:, [0,1,2,6,7,8]],   FORCE_MIN,  FORCE_MAX,  "forces (N)",   kinetics_path)
-    meta["warnings"] += _check_range(arr_k[:, [3,4,5,9,10,11]], MOMENT_MIN, MOMENT_MAX, "moments (Nm)", kinetics_path)
+ 
+    meta["warnings"] += _check_range(arr_k[:, [0,1,2,9,10,11]],   FORCE_MIN,  FORCE_MAX,  "forces (N)",   kinetics_path)
+    meta["warnings"] += _check_range(arr_k[:, [3,4,5,12,13,14]], MOMENT_MIN, MOMENT_MAX, "moments (Nm)", kinetics_path)
 
     # Check temporal consistency between joints and kinetics
     if meta["samples_joints"] != meta["samples_kinetics"]:
@@ -330,7 +339,7 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
 def find_trials(root: Path, dataset_name: str):
     """
     Scan <root>/<dataset>/<subject>/<task>/ for pairs of
-    joints_filtered.csv + kinetics_filtered.csv.
+    joints_filtered.csv + kinetics_pelvis_filtered.csv.
     Returns a list of (joints_path, kinetics_path, output_dir).
     """
     base = root / dataset_name
@@ -344,7 +353,7 @@ def find_trials(root: Path, dataset_name: str):
             if not task_dir.is_dir():
                 continue
             j = task_dir / "joints_filtered.csv"
-            k = task_dir / "kinetics_filtered.csv"
+            k = task_dir / "kinetics_pelvis_filtered.csv"
             if j.exists() and k.exists():
                 out_dir = root / "npy" / dataset_name / subject_dir.name / task_dir.name
                 trials.append((j, k, out_dir))
@@ -379,7 +388,7 @@ def print_summary(all_meta):
         print(f"      Frames (joints)     : {n_sj:,}  ({dur_min:.2f} min @ {SAMPLING_HZ} Hz)")
         print(f"      Frames (kinetics)   : {n_sk:,}")
         print(f"      lower_body_joints   : {lower_set} DOFs  (expected: {{12}})")
-        print(f"      all_joints          : {all_set} DOFs  (expected: {{29}})")
+        print(f"      all_joints          : {all_set} DOFs  (expected: {{35}})")
         print(f"      Warnings            : {n_warn}")
         total_sj   += n_sj;  total_sk  += n_sk
         total_ok   += n_ok;  total_warn += n_warn
@@ -415,10 +424,10 @@ def print_summary(all_meta):
         print(f"  [WARN] Inconsistent lower body DOF counts across datasets: {n_lower_vals}")
     else:
         print("  [OK]  lower_body_joints: 12 DOFs across all datasets.")
-    if n_all_vals != {29}:
+    if n_all_vals != {35}:
         print(f"  [WARN] Inconsistent all_joints DOF counts across datasets: {n_all_vals}")
     else:
-        print("  [OK]  all_joints: 29 DOFs across all datasets.")
+        print("  [OK]  all_joints: 56 DOFs across all datasets.")
     unit_ok = all(not any("RANGE" in w for w in m["warnings"]) for m in all_meta)
     if unit_ok:
         print("  [OK]  Value ranges consistent with expected units (N, Nm, rad).")
@@ -548,7 +557,7 @@ def plot_summary(all_meta, out_path: Path):
         ["Total duration",     f"{total_dur:.2f} min"],
         ["Sampling rate",      f"{SAMPLING_HZ} Hz"],
         ["lower_body_joints",  "12 DOFs / trial"],
-        ["all_joints",         "29 DOFs / trial"],
+        ["all_joints",         "35 DOFs / trial"],
         ["kinetics",           "12 ch  / trial"],
     ]
     tbl = ax_recap.table(cellText=recap_rows, colLabels=["Metric", "Value"],
@@ -641,7 +650,7 @@ def plot_summary(all_meta, out_path: Path):
     ax_all = fig.add_subplot(outer[3])
     ax_all.axis("off")
     ax_all.set_title(
-        "④  all_joints.npy  —  29 DOFs  (lower body [0-11] + upper body [12-28], no freeflyer)",
+        "④  all_joints.npy  —  35 DOFs  (lower body [0-11] + upper body [12-28], 7 freeflyer)",
         fontsize=13, fontweight="bold", color=C_HEAD, loc="left", pad=6)
 
     rows_all = [[str(i), c, av, hum]

@@ -12,13 +12,16 @@ import pinocchio as pin
 import meshcat
 from utils.model_utils import build_human_model # Ta fonction locale
 from pytorch_kinematics.transforms import Transform3d
+import example_robot_data as robex
+from pinocchio.visualize import MeshcatVisualizer
+
+
 which = 'Anais'
 subject = 'subject01'
-task = 'bend'
+task = 'walk'
 
 
 # --- CONFIGURATION ---
-urdf_path = '/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered.csv"
 joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", 
                   "left_wrist_X", "left_wrist_Z", "right_wrist_X", "right_wrist_Z"]
@@ -68,6 +71,37 @@ q_ref_df = pd.read_csv(path_joint)
 q_ref_np = q_ref_df.to_numpy(dtype=float)
 
 # 2. CONSTRUCTION DE LA CHAÎNE PYTORCH-KINEMATICS
+human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
+model_h = human.model
+data_h = human.data
+coll_h = human.collision_model
+vis_h = human.visual_model
+
+################################################################################LOCK JOINTS
+###for visu
+all_joint_ids = set(range(1, model_h.njoints))
+joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z"]
+joint_ids_to_lock = []
+for jn in joints_to_lock:
+    if model_h.existJointName(jn):
+        joint_ids_to_lock.append(model_h.getJointId(jn))
+    else:
+        print('Warning: joint ' + str(jn) + ' does not belong to the model!')
+
+q0 = pin.neutral(model_h)
+# Build reduced model
+model_h, vis_h = pin.buildReducedModel(
+    model_h, vis_h, joint_ids_to_lock, q0)
+
+print(model_h.nq)
+data_h = pin.Data(model_h)
+# ###############################################################################################################
+
+
+urdf_path = human.urdf
+
+print(f"Loading URDF from: {urdf_path}")
+
 with open(urdf_path, 'r') as f:
     urdf_data = f.read()
 
@@ -97,6 +131,7 @@ if which =='Anais' or which =='Vinc':
     for i, pk_name in enumerate(pk_joint_names):
         # 1. Vérifier si on doit verrouiller le joint
         if pk_name in joints_to_lock:
+            print('joint to lock:', pk_name)
             continue  # reste à 0.0
 
         csv_name = mapping.get(pk_name)
@@ -106,6 +141,7 @@ if which =='Anais' or which =='Vinc':
             q_pk[:, i] = torch.tensor(q_ref_df[csv_name].values, device=device)
         else:
             print(f"⚠️ Joint '{pk_name}' (mapped: '{csv_name}') non trouvé dans le CSV. Fixé à 0.")
+
 
 else : 
     for i, name in enumerate(pk_joint_names):
@@ -117,9 +153,8 @@ else :
             # Le joint reste à 0.0 (déjà initialisé par torch.zeros)
             joints_ignored.append(name)
 
-# --- PETIT RÉCAPITULATIF DE CONTRÔLE ---
-print(f"✅ Joints actifs ({len(joints_mapped)}) : {', '.join(joints_mapped[:5])}...")
-print(f"🔒 Joints verrouillés ou absents ({len(joints_ignored)}) : {', '.join(joints_ignored[:10])}...")
+    print(f"✅ Joints actifs ({len(joints_mapped)}) : {', '.join(joints_mapped[:5])}...")
+    print(f"🔒 Joints verrouillés ou absents ({len(joints_ignored)}) : {', '.join(joints_ignored[:10])}...")
 
 # FF_X, FF_Y, FF_Z, FF_quatx, FF_quaty, FF_quatz, FF_quatw
 if which =='Anais' or which =='Vinc':
@@ -152,12 +187,13 @@ with torch.no_grad():
         world_transforms[frame_name] = base_transform.compose(transform)
 
 # 5. VISUALISATION AVEC MESHCAT (Via Pinocchio pour le rendu mesh)
-# On réutilise ta config Pinocchio juste pour l'affichage
-model_h, coll_h, vis_h, _ = build_human_model(urdf_path, "motif/model/human_urdf")
 # Note: On garde le modèle complet ici pour l'affichage visuel simple
 viz = meshcat.Visualizer().open()
-# Optionnel: Tu peux utiliser ton MeshcatVisualizer habituel ici
-# viz_human = MeshcatVisualizer(model_h, coll_h, vis_h)
+
+viz_human = MeshcatVisualizer(model_h, coll_h, vis_h)
+viz_human.initViewer(viz, open=True)
+viz_human.viewer.delete()  # clear if relaunch
+viz_human.loadViewerModel("ref",color=[0.0, 1.0, 0.0, 0.8])
 
 def set_sphere(name, pos, color=0xff0000):
     viz[f"pk_markers/{name}"].set_object(
@@ -168,14 +204,19 @@ def set_sphere(name, pos, color=0xff0000):
 
 # Boucle d'animation
 print("Visualisation en cours sur Meshcat...")
-import time
 data_list = []
+from scipy.spatial.transform import Rotation as R
 
-for t in range(0, n_samples): # On saute des frames pour la fluidité
+angle = -np.pi / 2 
+R_corr = np.array([[1, 0,           0          ],
+                   [0, np.cos(angle), -np.sin(angle)],
+                   [0, np.sin(angle),  np.cos(angle)]])
+
+for i in range(n_samples): # On saute des frames pour la fluidité
     frame_data = {}
     # Pour chaque frame de l'URDF calculée par PK
     for frame_name, transform in world_transforms.items(): # <--- Utilise world_transforms
-        matrix = transform.get_matrix()[t].cpu().numpy()
+        matrix = transform.get_matrix()[i].cpu().numpy()
         pos = matrix[:3, 3]
         set_sphere(frame_name, pos)
 
@@ -184,6 +225,21 @@ for t in range(0, n_samples): # On saute des frames pour la fluidité
         frame_data[f"{frame_name}_Z"] = pos[2]
     
     data_list.append(frame_data)
+
+    q_current = q_ref_df.iloc[i].to_numpy()
+    pos_bassin_rnea = q_current[0:3]
+    quat_bassin = q_current[3:7] # qx, qy, qz, qw
+
+    quat_original = pin.Quaternion(q_current[6], q_current[3], q_current[4], q_current[5]) #(w,x,y,z) or : q_current[3:7]
+    R_original = quat_original.toRotationMatrix()
+
+    R_final = R_corr @ R_original 
+    quat_final = pin.Quaternion( R_final)
+    
+    q_ref_np[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    q_ref_np[i][0:3] = R_corr @ q_current[0:3]
+
+    viz_human.display(q_ref_np[i])
     
 df_output = pd.DataFrame(data_list)
 
