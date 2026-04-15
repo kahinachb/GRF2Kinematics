@@ -178,7 +178,7 @@ class DDPMTT:
     
     
 class DiffusionTransformerConcat(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         
         # Separate embeddings (same as before)
