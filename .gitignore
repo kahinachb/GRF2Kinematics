@@ -1,6 +1,7 @@
 /DATA
 /motif
 /processed_data
+/processed_data_pelvis
 /__pycache__/
 *.pyc
 /info.txt
@@ -9,6 +10,7 @@
 /minimal_model_local
 /minimal_model
 results/
+results*
 inference_results*/
 process_data/info.txt
 rt-cosmik

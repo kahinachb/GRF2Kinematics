@@ -5,8 +5,8 @@ Dataset for the motion diffusion model.
 
 Scans the npy/ output folder produced by convert_to_npy.py and builds a
 sliding-window dataset:
-    X  (joints)   : (T, 29)  — all_joints.npy
-    C  (condition): (T, 12)  — kinetics.npy
+    X  (joints)   : (T, len(dofs))  — all_joints.npy
+    C  (condition): (T, len(kinetics))  — kinetics.npy
 
 Normalization:
     Mean and std are computed on the training split and saved as .npz so
@@ -39,8 +39,13 @@ class Normalizer:
         """Compute mean/std over axis 0 (frames × DOFs concatenated)."""
         self.mean = data.mean(axis=0, keepdims=True).astype(np.float32)
         self.std  = data.std(axis=0,  keepdims=True).astype(np.float32)
-        # Avoid division by zero for constant channels
-        self.std  = np.where(self.std < 1e-8, 1.0, self.std)
+
+        # self.std = np.where(self.std < 0.01, 1.0, self.std) 
+        # print(self.mean.shape)
+        # print(self.std.shape)
+    
+        # print(f"DEBUG NORM - Mean min/max: {self.mean.min():.4f} / {self.mean.max():.4f}")
+        # print(f"DEBUG NORM - Std min/max: {self.std.min():.4f} / {self.std.max():.4f}")
 
     def transform(self, data: np.ndarray) -> np.ndarray:
         return (data - self.mean) / self.std
@@ -99,12 +104,14 @@ def load_all_trials(npy_root: Path) -> Tuple[List[np.ndarray], List[np.ndarray]]
     joints_l, kinetics_l = [], []
     print(f"  [Dataset] Found {len(pairs)} trial(s) under {npy_root}")
     for jp, kp in pairs:
-        j = np.load(jp).astype(np.float32)   # (T, 29)
-        k = np.load(kp).astype(np.float32)   # (T, 12)
+        j = np.load(jp).astype(np.float32)   
+        k = np.load(kp).astype(np.float32)
+
         # Truncate to the shortest to keep them aligned
         n = min(len(j), len(k))
         joints_l.append(j[:n])
         kinetics_l.append(k[:n])
+  
     return joints_l, kinetics_l
 
 
@@ -120,8 +127,8 @@ class MotionDiffusionDataset(Dataset):
     Overlapping windows are created with a stride of `stride` frames.
 
     Args:
-        joints_list   : list of (T_i, 29) arrays
-        kinetics_list : list of (T_i, 12) arrays
+        joints_list   : list of (T_i, len(dofs)) arrays
+        kinetics_list : list of (T_i, len(kinetics)) arrays
         seq_len       : window length in frames (128 → 1.28 s @ 100 Hz)
         stride        : step between consecutive windows (default = seq_len // 2)
         joint_norm    : fitted Normalizer for joints  (None = no normalization)
@@ -167,8 +174,8 @@ class MotionDiffusionDataset(Dataset):
         trial_idx, start = self.index[idx]
         end = start + self.seq_len
 
-        joints   = self.joints_list[trial_idx][start:end].copy()    # (T, 29)
-        kinetics = self.kinetics_list[trial_idx][start:end].copy()  # (T, 12)
+        joints   = self.joints_list[trial_idx][start:end].copy()    
+        kinetics = self.kinetics_list[trial_idx][start:end].copy()  
 
         if self.joint_norm is not None:
             joints   = self.joint_norm.transform(joints)
@@ -176,8 +183,8 @@ class MotionDiffusionDataset(Dataset):
             kinetics = self.kinetics_norm.transform(kinetics)
 
         return (
-            torch.from_numpy(joints),    # (T, 29)  float32
-            torch.from_numpy(kinetics),  # (T, 12)  float32
+            torch.from_numpy(joints),    # float32
+            torch.from_numpy(kinetics),  # float32
         )
 
 
@@ -298,6 +305,10 @@ def build_datasets(
             for jp, kp in subject_to_trials[s]:
                 j = np.load(jp).astype(np.float32)
                 k = np.load(kp).astype(np.float32)
+                # print(f'{jp} a {j.shape[1]}')
+                # print(f'{kp} a {k.shape[1]} ')
+                j = j[:, 6:18]
+
                 n = min(len(j), len(k))
                 joints_l.append(j[:n])
                 kinetics_l.append(k[:n])
@@ -327,8 +338,5 @@ def build_datasets(
                                        joint_norm, kinetics_norm)
     test_ds  = MotionDiffusionDataset(test_j,  test_k,  seq_len, None,
                                        joint_norm, kinetics_norm)
-    # Note: test set uses stride=None → stride=seq_len//2 by default,
-    # but since it is only used for final evaluation (no training),
-    # you may prefer stride=seq_len for non-overlapping windows.
 
     return train_ds, val_ds, test_ds, joint_norm, kinetics_norm

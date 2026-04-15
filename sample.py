@@ -130,14 +130,13 @@ def generate_trial_guidance(
     joint_norm:    Normalizer,
     seq_len:       int,
     device:        torch.device,
-    joint_limits:  dict,      # <--- Ajoute ceci
+    joint_limits:  dict,      
     overlap:       int = 32,
     n_samples:     int = 1,
-    guidance_scale: float = 0.5 # <--- Optionnel: pour pouvoir l'ajuster facilement
+    guidance_scale: float = 0.5
 ) -> np.ndarray:
     
     T      = len(kinetics_raw)
-    # Assure-toi que k_norm contient bien tes 18 colonnes (forces+moments+cop)
     k_norm = kinetics_norm.transform(kinetics_raw)   
 
     all_samples = []
@@ -152,12 +151,11 @@ def generate_trial_guidance(
             end   = min(start + seq_len, T)
             chunk = end - start
 
-            # Préparation du chunk de conditionnement (18 colonnes)
+            #  chunk de conditionnement (18 )
             k_chunk          = np.zeros((seq_len, 18), dtype=np.float32)
             k_chunk[:chunk]  = k_norm[start:end]
             k_tensor         = torch.from_numpy(k_chunk).unsqueeze(0).to(device)
 
-            # Appel de la nouvelle méthode avec Guidance
             x_gen = ddpm.generate_with_guidance(
                 model, 
                 k_tensor, 
@@ -167,7 +165,7 @@ def generate_trial_guidance(
                 guidance_scale=guidance_scale
             )
             
-            # Post-processing : on repasse en CPU/Numpy et on dé-normalise
+            # Post-processing : on repasse en CPU/Numpy et on dénormalise
             x_gen = joint_norm.inverse_transform(x_gen.squeeze(0).cpu().numpy())
 
             # Accumulation avec fenêtre
@@ -182,7 +180,7 @@ def generate_trial_guidance(
         weight_acc = np.where(weight_acc < 1e-8, 1.0, weight_acc)
         all_samples.append(pred_acc / weight_acc)   
 
-    return np.stack(all_samples, axis=0) # (n_samples, T, 35)
+    return np.stack(all_samples, axis=0) 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OPTIONAL: QUICK COMPARISON PLOT
@@ -492,7 +490,7 @@ def main():
     parser.add_argument("--npy-root",   default=None, help="npy/ root: process all trials")
     parser.add_argument("--out-dir",    default="generated",            help="Output dir for batch mode")
     # Options
-    parser.add_argument("--overlap",    type=int,   default=32,   help="Window overlap for blending (frames)")
+    parser.add_argument("--overlap",    type=int,   default=64,   help="Window overlap for blending (frames)")
     parser.add_argument("--n-samples",  type=int,   default=1,
                         help="Number of independent samples to generate per trial "
                              "(> 1 exploits multimodality of the diffusion model)")

@@ -276,39 +276,39 @@ def process_subject_trial(subject, trial_num):
 
     print("Original shape :", q_ref.shape)
 
-    for i in range(n_samples-1):
-        R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
-        p_t = q_ref[i, 0:3]
+    # for i in range(n_samples-1):
+    #     R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
+    #     p_t = q_ref[i, 0:3]
         
-        # --- Frame suivante (t+1) ---
-        R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
-        p_next = q_ref[i+1, 0:3]
+    #     # --- Frame suivante (t+1) ---
+    #     R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
+    #     p_next = q_ref[i+1, 0:3]
         
-        # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
-        # On projette le déplacement global dans le repère de la frame actuelle
-        delta_pos_local[i] = R_t.T @ (p_next - p_t)
+    #     # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
+    #     # On projette le déplacement global dans le repère de la frame actuelle
+    #     delta_pos_local[i] = R_t.T @ (p_next - p_t)
         
-        # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
-        # On calcule la rotation relative : R_rel = R_t^T * R_next
-        R_rel = R_t.T @ R_next
-        # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
-        delta_rot_local[i] = pin.log3(R_rel)
+    #     # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
+    #     # On calcule la rotation relative : R_rel = R_t^T * R_next
+    #     R_rel = R_t.T @ R_next
+    #     # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
+    #     delta_rot_local[i] = pin.log3(R_rel)
 
-    q_ref = q_ref[1:, 7:]
+    # q_ref = q_ref[1:, 7:]
 
     
 
-    # reconstruire nouveau q_ref
-    q_ref = np.concatenate([
-        delta_pos_local,
-        delta_rot_local,
-        q_ref
-    ], axis=1)
+    # # reconstruire nouveau q_ref
+    # q_ref = np.concatenate([
+    #     delta_pos_local,
+    #     delta_rot_local,
+    #     q_ref
+    # ], axis=1)
 
     
-    print("New shape      :", q_ref.shape)
+    # print("New shape      :", q_ref.shape)
 
-    cut = -20 
+    cut = -10
 
     
     pf_forces_clean = pf_forces_clean[:cut]
@@ -394,7 +394,7 @@ def process_subject_trial(subject, trial_num):
     last_6 = q_ref_raw[:, -6:]
     dof_raw = np.concatenate((dof_raw,last_6),axis=1)
 
-    dof_filt   = np.degrees(q_ref[:,    6:6+6])
+    dof_filt   = np.degrees(q_ref[:,    7:7+6])
     last_6_filt = q_ref[:, -6:]
     dof_filt = np.concatenate((dof_filt,last_6_filt),axis=1)
 
@@ -407,13 +407,13 @@ def process_subject_trial(subject, trial_num):
                                figsize=(18, 4*n_rows_fig), sharex=True)
     axs2 = axs2.flatten()
 
-    dof_raw = dof_raw[1:cut]
+    dof_raw = dof_raw[:cut]
     dof_filt = dof_filt[:cut]
     time_q = time[:-1]
 
     for k in range(n_dofs):
-        axs2[k].plot(time_q, dof_raw[:,k],  color='red', label='raw')
-        axs2[k].plot(time_q, dof_filt[:,k], color='black',label='filtered')
+        axs2[k].plot(time, dof_raw[:,k],  color='red', label='raw')
+        axs2[k].plot(time, dof_filt[:,k], color='black',label='filtered')
         axs2[k].set_title(dof_names[k], fontsize=10)
         axs2[k].set_ylabel("Angle (°)"); axs2[k].grid(alpha=0.3)
         if k >= (n_rows_fig - 1) * n_cols_fig:
@@ -429,77 +429,77 @@ def process_subject_trial(subject, trial_num):
     # fig2.savefig(out2, dpi=150, bbox_inches='tight')
     # plt.close(fig2)
     # print(f"  Saved: {out2}")
-    # plt.show()
+    plt.show()
 
     save_dir = os.path.join(BASE_DATA_DIR, subject, trial_id)
     os.makedirs(save_dir, exist_ok=True)
 
     kinetics_filtered_df = pd.DataFrame({
-        'Fx1_glob': pf1_forces_clean[1:cut,0],
-        'Fy1_glob': pf1_forces_clean[1:cut,1],
-        'Fz1_glob': pf1_forces_clean[1:cut,2],
-        'Mx1_glob': pf1_moments_clean[1:cut,0],
-        'My1_glob': pf1_moments_clean[1:cut,1],
-        'Mz1_glob': pf1_moments_clean[1:cut,2],
-        'Fx2_glob': pf2_forces_clean[1:cut,0],
-        'Fy2_glob': pf2_forces_clean[1:cut,1],
-        'Fz2_glob': pf2_forces_clean[1:cut,2],
-        'Mx2_glob': pf2_moments_clean[1:cut,0],
-        'My2_glob': pf2_moments_clean[1:cut,1],
-        'Mz2_glob': pf2_moments_clean[1:cut,2],
+        'Fx1_glob': pf1_forces_clean[:cut,0],
+        'Fy1_glob': pf1_forces_clean[:cut,1],
+        'Fz1_glob': pf1_forces_clean[:cut,2],
+        'Mx1_glob': pf1_moments_clean[:cut,0],
+        'My1_glob': pf1_moments_clean[:cut,1],
+        'Mz1_glob': pf1_moments_clean[:cut,2],
+        'Fx2_glob': pf2_forces_clean[:cut,0],
+        'Fy2_glob': pf2_forces_clean[:cut,1],
+        'Fz2_glob': pf2_forces_clean[:cut,2],
+        'Mx2_glob': pf2_moments_clean[:cut,0],
+        'My2_glob': pf2_moments_clean[:cut,1],
+        'Mz2_glob': pf2_moments_clean[:cut,2],
 
-        'COPx1_glob':pf1_cop_clean[1:cut,0],
-        'COPy1_glob':pf1_cop_clean[1:cut,1],
-        'COPz1_glob':pf1_cop_clean[1:cut,2],
-        'COPx2_glob':pf2_cop_clean[1:cut,0],
-        'COPy2_glob':pf2_cop_clean[1:cut,1],
-        'COPz2_glob':pf2_cop_clean[1:cut,2],
+        'COPx1_glob':pf1_cop_clean[:cut,0],
+        'COPy1_glob':pf1_cop_clean[:cut,1],
+        'COPz1_glob':pf1_cop_clean[:cut,2],
+        'COPx2_glob':pf2_cop_clean[:cut,0],
+        'COPy2_glob':pf2_cop_clean[:cut,1],
+        'COPz2_glob':pf2_cop_clean[:cut,2],
     })
 
     kinetics_filtered_df_pelvis = pd.DataFrame({
-        'Fx1': pf1_forces_pelvis[1:cut,0],
-        'Fy1': pf1_forces_pelvis[1:cut,1],
-        'Fz1': pf1_forces_pelvis[1:cut,2],
-        'Mx1': pf1_moments_pelvis[1:cut,0],
-        'My1': pf1_moments_pelvis[1:cut,1],
-        'Mz1': pf1_moments_pelvis[1:cut,2],
-        'Fx2': pf2_forces_pelvis[1:cut,0],
-        'Fy2': pf2_forces_pelvis[1:cut,1],
-        'Fz2': pf2_forces_pelvis[1:cut,2],
-        'Mx2': pf2_moments_pelvis[1:cut,0],
-        'My2': pf2_moments_pelvis[1:cut,1],
-        'Mz2': pf2_moments_pelvis[1:cut,2],
+        'Fx1': pf1_forces_pelvis[:cut,0],
+        'Fy1': pf1_forces_pelvis[:cut,1],
+        'Fz1': pf1_forces_pelvis[:cut,2],
+        'Mx1': pf1_moments_pelvis[:cut,0],
+        'My1': pf1_moments_pelvis[:cut,1],
+        'Mz1': pf1_moments_pelvis[:cut,2],
+        'Fx2': pf2_forces_pelvis[:cut,0],
+        'Fy2': pf2_forces_pelvis[:cut,1],
+        'Fz2': pf2_forces_pelvis[:cut,2],
+        'Mx2': pf2_moments_pelvis[:cut,0],
+        'My2': pf2_moments_pelvis[:cut,1],
+        'Mz2': pf2_moments_pelvis[:cut,2],
 
-        'COPx1':pf1_cop_pelvis[1:cut,0],
-        'COPy1':pf1_cop_pelvis[1:cut,1],
-        'COPz1':pf1_cop_pelvis[1:cut,2],
-        'COPx2':pf2_cop_pelvis[1:cut,0],
-        'COPy2':pf2_cop_pelvis[1:cut,1],
-        'COPz2':pf2_cop_pelvis[1:cut,2],
+        'COPx1':pf1_cop_pelvis[:cut,0],
+        'COPy1':pf1_cop_pelvis[:cut,1],
+        'COPz1':pf1_cop_pelvis[:cut,2],
+        'COPx2':pf2_cop_pelvis[:cut,0],
+        'COPy2':pf2_cop_pelvis[:cut,1],
+        'COPz2':pf2_cop_pelvis[:cut,2],
     })
 
 
-    kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
-    kinetics_filtered_df.to_csv(kinetics_file, index=False)
-    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
+    # kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered_.csv")
+    # kinetics_filtered_df.to_csv(kinetics_file, index=False)
+    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
 
-    kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered.csv")
-    kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
-    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
+    # kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered_.csv")
+    # kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
+    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
 
-    # --- Sauvegarde joints filtrés ---
-    new_joint_names = [
-    "delta_x",
-    "delta_y",
-    "delta_z",
-    "delta_rx",
-    "delta_ry",
-    "delta_rz"
-    ] + joint_names[7:]
-    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=new_joint_names)
-    joints_file = os.path.join(save_dir, "joints_filtered.csv")
-    joints_filtered_df.to_csv(joints_file, index=False)
-    print(f"  Saved filtered joints: {joints_file}")
+    # # --- Sauvegarde joints filtrés ---
+    # new_joint_names = [
+    # "delta_x",
+    # "delta_y",
+    # "delta_z",
+    # "delta_rx",
+    # "delta_ry",
+    # "delta_rz"
+    # ] + joint_names[7:]
+    # joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
+    # joints_file = os.path.join(save_dir, "joints_filtered_.csv")
+    # joints_filtered_df.to_csv(joints_file, index=False)
+    # print(f"  Saved filtered joints: {joints_file}")
 
 
 

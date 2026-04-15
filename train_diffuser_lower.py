@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
-from utils.diffuser_utils import DDPM ,DiffusionTransformer
+from utils.diffuser_utils import DDPM ,DiffusionTransformer, DiffusionTransformerConcat
 
 # ==========================================
 # 1. DATASET 
@@ -17,6 +17,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
+            j_data = j_data[:, 6:18]
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
         self.stats = stats
@@ -37,6 +38,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
+    j_cat= j_cat[:, 6:18]
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
         'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0)
@@ -89,9 +91,9 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("./processed_data")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_pelvis")
 
-    results_dir = Path("results_test")
+    results_dir = Path("results_pelvis")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
@@ -115,8 +117,8 @@ def run_experiment():
             # On parcourt chaque essai (task) dans le dossier du sujet
             for t in s.iterdir():
                 if t.is_dir():
-                    f = t / "forces.npy"  # On cible uniquement le 100Hz
-                    j = t / "joints.npy"
+                    f = t / "kinetics.npy"  # On cible uniquement le 100Hz
+                    j = t / "all_joints.npy"
                     # On vérifie que les deux fichiers existent bien
                     if f.exists() and j.exists():
                         p.append((f, j))
@@ -131,8 +133,8 @@ def run_experiment():
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
-    model = DiffusionTransformer().to(device)
-    # model = DiffusionTransformerConcat().to(device)
+    # model = DiffusionTransformer().to(device)
+    model = DiffusionTransformerConcat().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 

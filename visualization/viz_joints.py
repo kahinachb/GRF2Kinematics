@@ -20,10 +20,10 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'subject01'
+subject = 'Jeremy'
 
-task = 'dyna'
-which = 'Anais'
+task = 'Trial111'
+which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
@@ -35,10 +35,10 @@ meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0
 
 
 if which =='HUMANOIDS' or which=='Anais' or which=='Vinc':
-    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
+    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_.csv"
     q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 
-    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered_.csv"
     df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 
     X1 = to_m(df_cop[find_col(df_cop, "COPx1_glob")])
@@ -115,8 +115,9 @@ df_cop[cols_to_filter] = grf_data_filtered
 urdf_name = "human.urdf"
 urdf_meshes_path = "motif/model/human_urdf"
 model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
-
-
+print(model_h.nq)
+print(model_h.gravity)
+input()
 # human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
 # model_h = human.model
 # data_h = human.data
