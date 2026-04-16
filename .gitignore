@@ -1,6 +1,6 @@
 /DATA
 /motif
-/processed_data
+/processed_data*
 /processed_data_pelvis
 /__pycache__/
 *.pyc
