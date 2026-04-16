@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import json
 from utils.diffuser_utils import DDPM, DiffusionTransformer
+import torch.nn as nn
 
 
 # ==========================================
@@ -35,6 +36,12 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     # Load data
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
+
+    j_raw = j_raw[:, 6:18]
+    # cols = list(range(6)) + list(range(9, 15))
+    # f_raw = f_raw[:,cols]
+
+    
     
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -75,6 +82,21 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
     
     return j_raw, final_pred.numpy()
+
+class DiffusionTransformer(nn.Module):
+    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
+        self.force_embed = nn.Linear(force_dim, embed_dim)
+        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
+        layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
+        self.output_layer = nn.Linear(embed_dim, joint_dim)
+
+    def forward(self, x, t, cond):
+        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
+        return self.output_layer(self.transformer(x_emb))
 
 
 # ==========================================
@@ -118,16 +140,16 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 3. INITIALIZE DDPM =====
     print("\n[3/5] Initializing DDPM...")
-    ddpm = DDPM(device, n_steps=200)
+    ddpm = DDPM(device, n_steps=1000)
     print(f"  ✓ DDPM initialized with {ddpm.n_steps} steps")
     
     # ===== 4. LOCATE DATA FILES =====
     print("\n[4/5] Locating data files...")
     # data_path = Path(data_root) / subject_name / trial_name
-    data_path = Path(data_root) / subject_name / f"{subject_name}_{trial_name}"
+    data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "forces.npy"
-    j_path = data_path / "joints.npy"
+    f_path = data_path / "kinetics.npy"
+    j_path = data_path / "all_joints.npy"
     
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -141,7 +163,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[5/5] Running inference...")
     j_ref, j_pred = predict_full_trial(
         model, ddpm, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=200
+        window_size=128, stride=64, inference_steps=1000
     )
     
     # ===== 6. SAVE RESULTS =====
@@ -207,13 +229,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "subject01"      # Change this to your subject
-    TRIAL_NAME = "bend"            # Change this to your trial
+    SUBJECT_NAME = "Jeremy"      # Change this to your subject
+    TRIAL_NAME = "Trial111"            # Change this to your trial
     
-    MODEL_PATH = "./results/diffusion_biomech_model.pth"
-    SCALERS_PATH = "./results/scalers.json"
-    DATA_ROOT = "./processed_data"
-    OUTPUT_DIR = "./inference_results"
+    MODEL_PATH = "./results_pelvis_cop/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./results_pelvis_cop/scalers_concat.json"
+    DATA_ROOT = "./processed_data_pelvis"
+    OUTPUT_DIR = "./inference_results_pelvis_cop"
     
     # ===== RUN INFERENCE =====
     run_inference(

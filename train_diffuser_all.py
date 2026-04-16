@@ -37,11 +37,11 @@ def save_checkpoint(state: dict, path: Path):
     print(f"  [Checkpoint] Saved → {path}")
 
 
-def load_checkpoint(path: Path, model, optimizer, scheduler, device):
+def load_checkpoint(path: Path, model, optimizer, device):
     ckpt      = torch.load(path, map_location=device)
     model.load_state_dict(ckpt["model"])
     optimizer.load_state_dict(ckpt["optimizer"])
-    scheduler.load_state_dict(ckpt["scheduler"])
+    # scheduler.load_state_dict(ckpt["scheduler"])
     start_epoch = ckpt["epoch"] + 1
     best_val    = ckpt.get("best_val_loss", float("inf"))
     print(f"  [Checkpoint] Resumed from epoch {ckpt['epoch']}  (best val={best_val:.6f})")
@@ -52,7 +52,7 @@ def load_checkpoint(path: Path, model, optimizer, scheduler, device):
 # TRAINING LOOP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train_one_epoch(model, ddpm, loader, optimizer, device, scheduler):
+def train_one_epoch(model, ddpm, loader, optimizer, device):
     model.train()
     total_loss = 0.0
 
@@ -73,17 +73,17 @@ def train_one_epoch(model, ddpm, loader, optimizer, device, scheduler):
         # 4. Normalize t to [0, 1] for the model
         t_norm = t.float() / ddpm.n_steps
 
+        optimizer.zero_grad()
+
         # 5. Predict the noise
         eps_pred = model(x_t, t_norm, kinetics)        # (B, T, len(dof))
 
         # 6. Simple MSE loss on the noise prediction (DDPM objective)
         loss = F.mse_loss(eps_pred, noise)
-
-        optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
-        scheduler.step()
+        # scheduler.step()
 
         total_loss += loss.item()
        #
@@ -141,13 +141,13 @@ def main():
     parser.add_argument("--min-beta",   type=float, default=1e-4, help="Beta schedule minimum")
     parser.add_argument("--max-beta",   type=float, default=0.02, help="Beta schedule maximum")
     # Training
-    parser.add_argument("--epochs",     type=int,   default=300,  help="Total training epochs")
+    parser.add_argument("--epochs",     type=int,   default=1,  help="Total training epochs")
     parser.add_argument("--batch-size", type=int,   default=64,   help="Batch size")
     parser.add_argument("--lr",         type=float, default=3e-4, help="Peak learning rate (AdamW)")
     parser.add_argument("--weight-decay",type=float,default=1e-4, help="AdamW weight decay")
     parser.add_argument("--num-workers",type=int,   default=4,    help="DataLoader worker count")
     # I/O
-    parser.add_argument("--out-dir",    default="checkpoints",    help="Directory for checkpoints and normalizers")
+    parser.add_argument("--out-dir",    default="TEST",    help="Directory for checkpoints and normalizers")
     parser.add_argument("--resume",     default=None,             help="Path to checkpoint to resume from")
     parser.add_argument("--log-every",  type=int,   default=10,   help="Print training loss every N steps")
     args = parser.parse_args()
@@ -188,19 +188,20 @@ def main():
 
     # ── Model ────────────────────────────────────────────────────────────────
     model = DiffusionTransformer(
-        joint_dim  = 35,
-        force_dim  = 18,
-        embed_dim  = args.embed_dim,
-        nhead      = args.nhead,
-        num_layers = args.num_layers,
-        seq_len    = args.seq_len,
-        dropout    = args.dropout,
+        # joint_dim  = 12,
+        # force_dim  = 18,
+        # embed_dim  = args.embed_dim,
+        # nhead      = args.nhead,
+        # num_layers = args.num_layers,
+        # seq_len    = args.seq_len,
+        # dropout    = args.dropout,
     ).to(device)
 
     ddpm = DDPM(device     = device,
                 n_steps    = args.n_steps,
-                min_beta   = args.min_beta,
-                max_beta   = args.max_beta)
+                # min_beta   = args.min_beta,
+                # max_beta   = args.max_beta
+    )
 
     n_params = count_parameters(model)
     print(f"\n  Model parameters : {n_params:,}")
@@ -210,23 +211,24 @@ def main():
 
     # ── Optimizer & Scheduler ────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(),
-                                  lr=args.lr, weight_decay=args.weight_decay)
+                                  lr=2e-4 #, weight_decay=args.weight_decay
+                                  )
     # Cosine annealing with linear warm-up via OneCycleLR
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr        = args.lr,
-        epochs        = args.epochs,
-        steps_per_epoch = len(train_loader),
-        pct_start     = 0.05,    # 5% of training for warm-up
-        anneal_strategy = "cos",
-    )
+    # scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    #     optimizer,
+    #     max_lr        = args.lr,
+    #     epochs        = args.epochs,
+    #     steps_per_epoch = len(train_loader),
+    #     pct_start     = 0.05,    # 5% of training for warm-up
+    #     anneal_strategy = "cos",
+    # )
 
     # ── Optional resume ──────────────────────────────────────────────────────
     start_epoch = 0
     best_val    = float("inf")
     if args.resume:
         start_epoch, best_val = load_checkpoint(
-            Path(args.resume), model, optimizer, scheduler, device
+            Path(args.resume), model, optimizer, device
         )
 
     # Save training config
@@ -241,7 +243,7 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(model, ddpm, train_loader,
-                                     optimizer, device, scheduler)
+                                     optimizer, device)
         val_loss   = evaluate(model, ddpm, val_loader, device)
         
 
@@ -260,7 +262,7 @@ def main():
                 "epoch":         epoch,
                 "model":         model.state_dict(),
                 "optimizer":     optimizer.state_dict(),
-                "scheduler":     scheduler.state_dict(),
+                # "scheduler":     scheduler.state_dict(),
                 "best_val_loss": best_val,
                 "args":          vars(args),
             }, out_dir / "best.pt")
@@ -271,7 +273,7 @@ def main():
                 "epoch":         epoch,
                 "model":         model.state_dict(),
                 "optimizer":     optimizer.state_dict(),
-                "scheduler":     scheduler.state_dict(),
+                # "scheduler":     scheduler.state_dict(),
                 "best_val_loss": best_val,
                 "args":          vars(args),
             }, out_dir / "last.pt")
