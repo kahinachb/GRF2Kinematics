@@ -308,7 +308,7 @@ def process_subject_trial(subject, trial_num):
     
     print("New shape      :", q_ref.shape)
 
-    cut = -10
+    cut = -20
 
     
     pf_forces_clean = pf_forces_clean[:cut]

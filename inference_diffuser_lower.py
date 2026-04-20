@@ -38,8 +38,8 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     j_raw = np.load(j_path).astype(np.float32)
 
     j_raw = j_raw[:, 6:18]
-    # cols = list(range(6)) + list(range(9, 15))
-    # f_raw = f_raw[:,cols]
+    cols = list(range(6)) + list(range(9, 15))
+    f_raw = f_raw[:,cols]
 
     
     
@@ -84,7 +84,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     return j_raw, final_pred.numpy()
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -148,7 +148,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics.npy"
+    f_path = data_path / "kinetics_glob.npy"
     j_path = data_path / "all_joints.npy"
     
     if not f_path.exists():
@@ -232,10 +232,10 @@ if __name__ == "__main__":
     SUBJECT_NAME = "Jeremy"      # Change this to your subject
     TRIAL_NAME = "Trial111"            # Change this to your trial
     
-    MODEL_PATH = "./results_pelvis_cop/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./results_pelvis_cop/scalers_concat.json"
-    DATA_ROOT = "./processed_data_pelvis"
-    OUTPUT_DIR = "./inference_results_pelvis_cop"
+    MODEL_PATH = "./results_global/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./results_global/scalers_concat.json"
+    DATA_ROOT = "./processed_data_global"
+    OUTPUT_DIR = "./inference_results_global"
     
     # ===== RUN INFERENCE =====
     run_inference(
