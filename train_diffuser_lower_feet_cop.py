@@ -18,8 +18,8 @@ class BiomechDiffusionDataset(Dataset):
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
             j_data = j_data[:, 6:18]
-            cols = list(range(6)) + list(range(9, 15))
-            f_data = f_data[:,cols]
+            # cols = list(range(6)) + list(range(9, 15))
+            # f_data = f_data[:,cols]
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
         self.stats = stats
@@ -41,8 +41,8 @@ def compute_and_save_stats(file_list, save_path):
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
     j_cat= j_cat[:, 6:18]
-    cols = list(range(6)) + list(range(9, 15))
-    f_cat = f_cat[:,cols]
+    # cols = list(range(6)) + list(range(9, 15))
+    # f_cat = f_cat[:,cols]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -57,7 +57,7 @@ def compute_and_save_stats(file_list, save_path):
 # 2. ARCHITECTURE
 # ==========================================
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -135,8 +135,8 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
     j_raw = j_raw[:, 6:18]
-    cols = list(range(6)) + list(range(9, 15))
-    f_raw = f_raw[:,cols]    
+    # cols = list(range(6)) + list(range(9, 15))
+    # f_raw = f_raw[:,cols]    
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
     T = f_norm.shape[0]
@@ -173,7 +173,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_feet_wout_cop")
+    results_dir = Path("results_feet")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
