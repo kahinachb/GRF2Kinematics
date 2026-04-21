@@ -1,12 +1,10 @@
+#convert csv to npy for Vinc and synth data.
 import os
 import glob
 import numpy as np
 import pandas as pd
 from pathlib import Path
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION DES COLONNES
-# ─────────────────────────────────────────────────────────────────────────────
+from scipy.spatial.transform import Rotation as R
 
 # Colonnes attendues dans tes CSV de sortie "feet_frame" (Right=1, Left=2)
 KINETICS_COLS = [
@@ -25,10 +23,84 @@ JOINTS_REORDER = [
     "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot", "Relbow_flex_ext", "Relbow_pron_supi"
 ]
 
-# Mapping pour le Freeflyer (si tes CSV utilisent delta_x ou q_0, q_1...)
-# On suppose que les 7 premières colonnes du CSV sont le FF dans l'ordre X,Y,Z, qx,qy,qz,qw
+#ff to delta
+def process_folder_to_local_delta(input_folder, output_base):
+    input_path = Path(input_folder)
+    output_path = Path(output_base)
+    joint_files = glob.glob(str(input_path / "joint_filtered_*.csv"))
+    
+    for j_file in joint_files:
+        trial_id = os.path.basename(j_file).replace("joint_filtered_", "").replace(".csv", "")
+        k_file = input_path / f"feet_frame_{trial_id}.csv"
+        
+        if not k_file.exists(): continue
+        
+        trial_dir = output_path / trial_id
+        # Optionnel : skip si déjà fait
+        # if (trial_dir / "all_joints.npy").exists(): continue
 
+        try:
+            # --- CHARGEMENT ---
+            df_k = pd.read_csv(k_file)
+            df_j = pd.read_csv(j_file)
 
+            # --- PRÉPARATION DES COLONNES JOINTS ---
+            old_ff_cols = df_j.columns[:7]
+            ff_rename = {old: new for old, new in zip(old_ff_cols, JOINTS_REORDER[:7])}
+            df_j = df_j.rename(columns=ff_rename)
+            raw_joints = df_j[JOINTS_REORDER].values.astype(np.float32)
+
+            # --- CALCUL DU FREEFLYER LOCAL ---
+            # Positions (X, Y, Z) et Quaternions (x, y, z, w)
+            pos_global = raw_joints[:, 0:3]
+            rot_global = R.from_quat(raw_joints[:, 3:7])
+
+            # Matrices de rotation à l'instant t
+            r_t = rot_global[:-1] 
+            # Positions à t et t+1
+            p_t = pos_global[:-1]
+            p_next = pos_global[1:]
+            # Rotations à t+1
+            r_next = rot_global[1:]
+
+            # 1. Translation locale : R_t.inv() * (p_next - p_t)
+            # .apply() sur un objet Rotation Scipy fait exactement la multiplication matricielle R.T @ delta_p
+            local_delta_pos = r_t.inv().apply(p_next - p_t)
+
+            # 2. Rotation locale : R_rel = R_t.inv() * R_next
+            local_delta_rot_obj = r_t.inv() * r_next
+            local_delta_rotvec = local_delta_rot_obj.as_rotvec()
+
+            # --- DELTA AUTRES JOINTS ---
+            # Pour les articulations (angles), le delta reste une simple soustraction
+            pose_joints = raw_joints[1:, 7:]
+
+            # --- CONCATÉNATION (3 pos + 3 rotvec + 29 angles = 35 cols) ---
+            arr_j_final = np.hstack([
+                local_delta_pos, 
+                local_delta_rotvec, 
+                pose_joints
+            ]).astype(np.float32)
+
+            # --- TRAITEMENT KINETICS ---
+            rename_map = {col: col.replace('footR', 'fR').replace('footL', 'fL') for col in df_k.columns}
+            df_k = df_k.rename(columns=rename_map)
+            arr_k = df_k[KINETICS_COLS].values.astype(np.float32)
+            
+            # Alignement : on prend à partir de la frame 1 pour matcher les deltas
+            arr_k_sync = arr_k[1:]
+
+            # --- SAUVEGARDE ---
+            trial_dir.mkdir(parents=True, exist_ok=True)
+            np.save(trial_dir / "kinetics_deltaf.npy", arr_k_sync)
+            np.save(trial_dir / "all_joints_deltaf.npy", arr_j_final)
+            
+            print(f"  [OK] {trial_id} : {arr_j_final.shape}")
+
+        except Exception as e:
+            print(f"  [ERROR] {trial_id} : {e}")
+
+#normal ff
 def process_folder(input_folder, output_base):
     input_path = Path(input_folder)
     output_path = Path(output_base)
@@ -88,6 +160,7 @@ def process_folder(input_folder, output_base):
         except Exception as e:
             print(f"  [ERROR] Erreur sur {trial_id} : {e}")
 
+#Vinc data normal ff
 def process_vicon_folder(input_folder, output_folder):
     input_path = Path(input_folder)
     output_path = Path(output_folder)
@@ -125,12 +198,6 @@ def process_vicon_folder(input_folder, output_folder):
                 # -------- KINETICS --------
                 df_k = pd.read_csv(k_file)
 
-                rename_map = {
-                    col: col.replace('footR', 'fR').replace('footL', 'fL')
-                    for col in df_k.columns
-                }
-                df_k = df_k.rename(columns=rename_map)                
-
                 arr_k = df_k[KINETICS_COLS].values.astype(np.float32)
             
                 np.save(out_dir / "kinetics.npy", arr_k)
@@ -138,14 +205,9 @@ def process_vicon_folder(input_folder, output_folder):
                 # -------- JOINTS --------
                 df_j = pd.read_csv(j_file)
 
-                # rename freeflyer
-                old_ff_cols = df_j.columns[:7]
-                ff_rename = {
-                    old: new for old, new in zip(old_ff_cols, JOINTS_REORDER[:7])
-                }
-                df_j = df_j.rename(columns=ff_rename)
 
                 arr_j = df_j[JOINTS_REORDER].values.astype(np.float32)
+                print(arr_j)
                 np.save(out_dir / "all_joints.npy", arr_j)
 
             except Exception as e:
@@ -154,9 +216,9 @@ def process_vicon_folder(input_folder, output_folder):
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc"
+    IN_FOLDER = "DATA/generated_human_like_motions_csv/generated_human_like_motions_csv"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/Vinc_npy"
+    OUT_FOLDER = "DATA/npy/Vinc_npy_feet"
     
-    process_vicon_folder(IN_FOLDER, OUT_FOLDER)
+    process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER)
     print("\n--- Opération terminée ---")
