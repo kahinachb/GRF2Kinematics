@@ -37,7 +37,8 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
 
-    j_raw = j_raw[:, 6:18]
+    j_raw = j_raw[:, 7:19]
+ 
     # cols = list(range(6)) + list(range(9, 15))
     # f_raw = f_raw[:,cols]
 
@@ -229,13 +230,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "npy_synth"     
+    SUBJECT_NAME = "Jeremy"     
     TRIAL_NAME = "Trial111"           
     
     MODEL_PATH = "./results_feet/diffusion_biomech_model_concat.pth"
     SCALERS_PATH = "./results_feet/scalers_concat.json"
     # DATA_ROOT = "./processed_data_global"
-    DATA_ROOT = "./DATA/synth"
+    DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
     OUTPUT_DIR = "./inference_results_feet"
     
     # ===== RUN INFERENCE =====

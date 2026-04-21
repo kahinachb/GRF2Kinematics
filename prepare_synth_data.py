@@ -66,6 +66,7 @@ def process_folder(input_folder, output_base):
             # On vérifie si les colonnes utilisent fR ou footR (selon ta version de code)
             rename_map = {col: col.replace('footR', 'fR').replace('footL', 'fL') for col in df_k.columns}
             df_k = df_k.rename(columns=rename_map)
+           
             
             # Sélection et conversion (Right puis Left)
             arr_k = df_k[KINETICS_COLS].values.astype(np.float32)
@@ -87,11 +88,75 @@ def process_folder(input_folder, output_base):
         except Exception as e:
             print(f"  [ERROR] Erreur sur {trial_id} : {e}")
 
+def process_vicon_folder(input_folder, output_folder):
+    input_path = Path(input_folder)
+    output_path = Path(output_folder)
+
+    subjects = [s for s in input_path.iterdir() if s.is_dir()]
+    print(f"Nombre de sujets : {len(subjects)}")
+
+    for subject in subjects:
+        print(f"\n[SUBJECT] {subject.name}")
+        
+        trials = [t for t in subject.iterdir() if t.is_dir()]
+        
+        for trial in trials:
+            trial_name = trial.name
+            
+            j_file = trial / "joints_filtered_.csv"
+            k_file = trial / "kinetics_feet.csv"
+
+            if not j_file.exists() or not k_file.exists():
+                print(f"  [SKIP] Missing files in {trial_name}")
+                continue
+
+            # dossier output : Subject/Trial
+            out_dir = output_path / subject.name / trial_name
+
+            # anti doublon
+            if (out_dir / "kinetics.npy").exists():
+                print(f"  [SKIP] Déjà fait : {subject.name}/{trial_name}")
+                continue
+
+            print(f"  [PROC] {subject.name}/{trial_name}")
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                # -------- KINETICS --------
+                df_k = pd.read_csv(k_file)
+
+                rename_map = {
+                    col: col.replace('footR', 'fR').replace('footL', 'fL')
+                    for col in df_k.columns
+                }
+                df_k = df_k.rename(columns=rename_map)                
+
+                arr_k = df_k[KINETICS_COLS].values.astype(np.float32)
+            
+                np.save(out_dir / "kinetics.npy", arr_k)
+
+                # -------- JOINTS --------
+                df_j = pd.read_csv(j_file)
+
+                # rename freeflyer
+                old_ff_cols = df_j.columns[:7]
+                ff_rename = {
+                    old: new for old, new in zip(old_ff_cols, JOINTS_REORDER[:7])
+                }
+                df_j = df_j.rename(columns=ff_rename)
+
+                arr_j = df_j[JOINTS_REORDER].values.astype(np.float32)
+                np.save(out_dir / "all_joints.npy", arr_j)
+
+            except Exception as e:
+                print(f"  [ERROR] {subject.name}/{trial_name} : {e}")
+
+
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/generated_human_like_motions_csv/generated_human_like_motions_csv"
+    IN_FOLDER = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/npy_synth"
+    OUT_FOLDER = "DATA/Vinc_npy"
     
-    process_folder(IN_FOLDER, OUT_FOLDER)
+    process_vicon_folder(IN_FOLDER, OUT_FOLDER)
     print("\n--- Opération terminée ---")
