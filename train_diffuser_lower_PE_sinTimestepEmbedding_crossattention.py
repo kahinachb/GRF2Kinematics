@@ -17,10 +17,8 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 6:18]
-            cols = list(range(6)) + list(range(9, 15))
-            f_data = f_data[:,cols]
-
+            j_data = j_data[:, 7:19]
+            
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
         self.stats = stats
@@ -41,10 +39,8 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 6:18]
-    cols = list(range(6)) + list(range(9, 15))
-    f_cat = f_cat[:,cols]
-
+    j_cat= j_cat[:, 7:19]
+    
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
         'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0)
@@ -57,76 +53,82 @@ def compute_and_save_stats(file_list, save_path):
 # ==========================================
 # 2. ARCHITECTURE
 # ==========================================
+import math
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
+        super().__init__()
+        pe = torch.zeros(1, max_len, d_model)
+        position = torch.arange(max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
+
+# ---> ADDED: Sinusoidal Timestep Embedding Class <---
+class SinusoidalTimeEmbeddings(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        # time: 1D tensor of shape (batch_size,)
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
-        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
-        layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
-        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
-        self.output_layer = nn.Linear(embed_dim, joint_dim)
-
-    def forward(self, x, t, cond):
-        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
-        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
-        return self.output_layer(self.transformer(x_emb))
-
-class DiffusionTransformerConcat(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
-        super().__init__()
         
-        # Separate embeddings (same as before)
-        self.joint_embed = nn.Linear(joint_dim, embed_dim)
-        self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(
-            nn.Linear(1, embed_dim), 
-            nn.SiLU(), 
+        self.time_mlp = nn.Sequential(
+            SinusoidalTimeEmbeddings(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.SiLU(),
             nn.Linear(embed_dim, embed_dim)
-        )
+        ) 
         
-        # NEW: Projection layer to combine concatenated embeddings
-        # 256 (joints) + 256 (forces) + 256 (time) = 768 total
-        self.combine_proj = nn.Linear(embed_dim * 3, embed_dim)
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
         
-        # Transformer (same as before)
-        layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, 
-            nhead=nhead, 
-            batch_first=True, 
-            norm_first=True
-        )
-        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
+        # ---> CHANGED: Encoder to Decoder for Cross-Attention <---
+        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
         
-        # Output layer (same as before)
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
-        # x: [batch, 128, 12] - noisy joints
-        # t: [batch] - timestep
-        # cond: [batch, 128, 12] - force conditions
+        # 1. Safeguard: Ensure t is a 1D tensor (handles inference loop integers)
+        if isinstance(t, (int, float)):
+            t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
+        elif t.dim() == 0:
+            t = t.unsqueeze(0).expand(x.shape[0])
+
+        # 2. Process Time Embedding
+        t_emb = self.time_mlp(t).unsqueeze(1) 
         
-        batch_size, seq_len, _ = x.shape
+        # 3. Process Target Sequence (Noisy Joints + Time + Position)
+        x_emb = self.joint_embed(x) + t_emb 
+        x_emb = self.pos_encoder(x_emb) 
         
-        # 1. Create embeddings
-        x_emb = self.joint_embed(x)              # [batch, 128, 256]
-        f_emb = self.force_embed(cond)           # [batch, 128, 256]
-        t_emb = self.time_embed(t.view(-1, 1))   # [batch, 256]
+        # 4. Process Memory Sequence (Forces + Position)
+        # Note: Time-series forces also need positional awareness!
+        cond_emb = self.force_embed(cond)
+        cond_emb = self.pos_encoder(cond_emb)
         
-        # 2. Expand time embedding to match sequence length
-        t_emb = t_emb.unsqueeze(1).expand(-1, seq_len, -1)  # [batch, 128, 256]
+        # 5. Transformer Decoder (tgt=Joints, memory=Forces)
+        out = self.transformer(tgt=x_emb, memory=cond_emb)
         
-        # 3. CONCATENATE along the feature dimension
-        combined = torch.cat([x_emb, f_emb, t_emb], dim=-1)  # [batch, 128, 768]
-        
-        # 4. Project back down to embed_dim
-        combined = self.combine_proj(combined)    # [batch, 128, 256]
-        
-        # 5. Process through transformer
-        transformed = self.transformer(combined)  # [batch, 128, 256]
-        
-        # 6. Predict noise
-        return self.output_layer(transformed)     # [batch, 128, 12]
+        return self.output_layer(out)
     
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
@@ -135,10 +137,8 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 6:18]
-    cols = list(range(6)) + list(range(9, 15))
-    f_raw = f_raw[:,cols]
-    
+    j_raw = j_raw[:, 7:19]
+  
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
     T = f_norm.shape[0]
@@ -173,64 +173,64 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_global")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_global")
+    results_dir = Path("results_PE_sin_cross")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
-    task_subs = [s for s in subjects if "subject" in s.name.lower()]
-    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
-    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
+    subjects = [d for d in data_root.iterdir() if d.is_dir()]
+    if len(subjects) > 1:
+        print("⚠️ Tu as plus d'un sujet")
+        print (subjects)
+        subject = subjects[0]
+        print(subject)
 
-    train_subs = task_subs[:11] + squat_subs[:4]
-    val_subs = task_subs[11:14] + squat_subs[4:5]
-    test_subs = task_subs[14:] + squat_subs[5:]
+    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
+
+    print(f"Total trials: {len(trials)}")
+
+    random.seed(42)
+    random.shuffle(trials)
+
+    n = len(trials)
+    train_trials = trials[:int(0.7*n)]
+    val_trials   = trials[int(0.7*n):int(0.85*n)]
+    test_trials  = trials[int(0.85*n):]
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")
-    print(f"VAL   ({len(val_subs)} sujets): {[s.name for s in val_subs]}")
-    print(f"TEST  ({len(test_subs)} sujets): {[s.name for s in test_subs]}")
-    print(f"{'='*30}")
-
-    # def get_pairs(subs):
-    #     p = []
-    #     for s in subs:
-    #         for t in s.iterdir():
-    #             f = t/"forces_300.npy" if (t/"forces_300.npy").exists() else t/"forces.npy"
-    #             j = t/"joints.npy"
-    #             if f.exists() and j.exists(): p.append((f, j))
-    #     return p
-
-    def get_pairs(subs):
-        p = []
-        for s in subs:
-            # On parcourt chaque essai (task) dans le dossier du sujet
-            for t in s.iterdir():
-                if t.is_dir():
-                    f = t / "kinetics_glob.npy"  # On cible uniquement le 100Hz
-                    j = t / "all_joints.npy"
-                    # On vérifie que les deux fichiers existent bien
-                    if f.exists() and j.exists():
-                        p.append((f, j))
-        return p
+    print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
+    print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
+    print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
 
 
-    train_pairs = get_pairs(train_subs)
+    def get_pairs(trials):
+        pairs = []
+        
+        for t in trials:
+            if t.is_dir():
+                f = t / "kinetics.npy"
+                j = t / "all_joints.npy"
+
+                if f.exists() and j.exists():
+                    pairs.append((f, j))
+
+        return pairs
+
+
+    train_pairs = get_pairs(train_trials)
     print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_trials), stats=stats), batch_size=64)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
     model = DiffusionTransformer().to(device)
-    # model = DiffusionTransformerConcat().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
-    epochs = 500 
+    epochs = 1 
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
@@ -245,7 +245,7 @@ def run_experiment():
             
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
-            pred_noise = model(j_noisy, t.float() / ddpm.n_steps, f)
+            pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
             loss.backward(); optimizer.step()
             t_loss += loss.item()
@@ -258,7 +258,7 @@ def run_experiment():
                 t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
                 noise = torch.randn_like(j)
                 j_noisy = ddpm.sample_forward(j, t, noise)
-                v_loss += nn.MSELoss()(model(j_noisy, t.float() / ddpm.n_steps, f), noise).item()
+                v_loss += nn.MSELoss()(model(j_noisy, t, f), noise).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
@@ -268,7 +268,7 @@ def run_experiment():
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_trials), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -288,7 +288,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_subs)
+    test_pairs = get_pairs(test_trials)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
@@ -308,3 +308,4 @@ def run_experiment():
 
 if __name__ == "__main__":
     run_experiment()
+

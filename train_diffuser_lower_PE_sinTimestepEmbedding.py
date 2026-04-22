@@ -53,19 +53,67 @@ def compute_and_save_stats(file_list, save_path):
 # ==========================================
 # 2. ARCHITECTURE
 # ==========================================
+import math
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
+        super().__init__()
+        pe = torch.zeros(1, max_len, d_model)
+        position = torch.arange(max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
+
+# ---> ADDED: Sinusoidal Timestep Embedding Class <---
+class SinusoidalTimeEmbeddings(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        # time: 1D tensor of shape (batch_size,)
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
 class DiffusionTransformer(nn.Module):
     def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
-        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
+        
+        # ---> MODIFIED: Time embedding now uses Sinusoidal + MLP <---
+        self.time_mlp = nn.Sequential(
+            SinusoidalTimeEmbeddings(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        ) 
+        
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
         layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
         self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
-        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
-        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
+        # Pass raw integer 't' through the time_mlp
+        if isinstance(t, (int, float)):
+            t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
+        elif t.dim() == 0:
+            t = t.unsqueeze(0).expand(x.shape[0])
+            
+        t_emb = self.time_mlp(t).unsqueeze(1) 
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb 
+        x_emb = self.pos_encoder(x_emb) 
         return self.output_layer(self.transformer(x_emb))
     
 # ==========================================
@@ -113,13 +161,15 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_feet_cop")
+    results_dir = Path("results_PE_sinT")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    assert len(subjects) == 1, "⚠️ Tu as plus d'un sujet"
-
-    subject = subjects[0]
+    if len(subjects) > 1:
+        print("⚠️ Tu as plus d'un sujet")
+        print (subjects)
+        subject = subjects[0]
+        print(subject)
 
     trials = sorted([t for t in subject.iterdir() if t.is_dir()])
 
@@ -181,7 +231,7 @@ def run_experiment():
             
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
-            pred_noise = model(j_noisy, t.float() / ddpm.n_steps, f)
+            pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
             loss.backward(); optimizer.step()
             t_loss += loss.item()
@@ -194,7 +244,7 @@ def run_experiment():
                 t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
                 noise = torch.randn_like(j)
                 j_noisy = ddpm.sample_forward(j, t, noise)
-                v_loss += nn.MSELoss()(model(j_noisy, t.float() / ddpm.n_steps, f), noise).item()
+                v_loss += nn.MSELoss()(model(j_noisy, t, f), noise).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))

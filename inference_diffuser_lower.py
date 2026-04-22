@@ -141,7 +141,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 3. INITIALIZE DDPM =====
     print("\n[3/5] Initializing DDPM...")
-    ddpm = DDPM(device, n_steps=1000)
+    ddpm = DDPM(device, n_steps=2000)
     print(f"  ✓ DDPM initialized with {ddpm.n_steps} steps")
     
     # ===== 4. LOCATE DATA FILES =====
@@ -164,7 +164,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[5/5] Running inference...")
     j_ref, j_pred = predict_full_trial(
         model, ddpm, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=1000
+        window_size=128, stride=64, inference_steps=2000
     )
     
     # ===== 6. SAVE RESULTS =====
@@ -233,11 +233,11 @@ if __name__ == "__main__":
     SUBJECT_NAME = "Jeremy"     
     TRIAL_NAME = "Trial111"           
     
-    MODEL_PATH = "./results_feet/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./results_feet/scalers_concat.json"
+    MODEL_PATH = "./results_feet_cop/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./results_feet_cop/scalers_concat.json"
     # DATA_ROOT = "./processed_data_global"
     DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
-    OUTPUT_DIR = "./inference_results_feet"
+    OUTPUT_DIR = "./inference_results_feet_cop"
     
     # ===== RUN INFERENCE =====
     run_inference(

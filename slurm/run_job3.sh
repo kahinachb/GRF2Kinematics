@@ -18,5 +18,5 @@ module load pytorch-gpu/py3/2.6.0
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_NODELIST | head -n1)
 export MASTER_PORT=29500
 
-srun python train_diffuser_lower_global.py
+srun python train_diffuser_lower_PE_sinTimestepEmbedding_crossattention.py
  
