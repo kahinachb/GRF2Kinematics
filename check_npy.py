@@ -6,9 +6,9 @@ from pathlib import Path
 # CONFIGURATION
 # =========================================================
 # Remplace ce chemin par ton fichier .npy
-file_path_k = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_data/s1/squat_variant_980_dz-0.080_dx+0.023_dy-0.017/all_joints.npy")
+file_path_k = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_pelvis/Christine/Trial107/all_joints.npy")
 # Exemple :
-file_path_j = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_data/s1/squat_variant_980_dz-0.080_dx+0.023_dy-0.017/kinetics.npy")
+file_path_j = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_pelvis/Christine/Trial107/kinetics.npy")
 
 # =========================================================
 # LOAD FILE
@@ -20,13 +20,13 @@ print("Shape:", data.shape)
 print("Type:", data.dtype)
 print("\nFirst 5 rows:")
 print(data[:5])
-# data = np.load(file_path_j)
+data = np.load(file_path_j)
 
-# print("File loaded:", file_path_j)
-# print("Shape:", data.shape)
-# print("Type:", data.dtype)
-# print("\nFirst 5 rows:")
-# print(data[:5])
+print("File loaded:", file_path_j)
+print("Shape:", data.shape)
+print("Type:", data.dtype)
+print("\nFirst 5 rows:")
+print(data[:5])
 # =========================================================
 # DISPLAY FIRST FEW ROWS
 # =========================================================

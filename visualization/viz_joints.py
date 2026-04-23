@@ -33,6 +33,10 @@ urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
+df_mks= pd.read_csv(f"DATA/Vinc/{subject}/{task}_filled.csv")
+mks_dict, start_sample_dict = read_mks_data(df_mks, start_sample=0, converter=1000.0)
+mks_names = start_sample_dict.keys()
+
 
 if which =='HUMANOIDS' or which=='Anais' or which=='Vinc':
     path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_.csv"
@@ -188,6 +192,9 @@ add_sphere(viewer, "world/COP_left", radius=0.015, color=0xFF8800)  # orange
 add_sphere(viewer, "world/COP_RNEA",  radius=0.015, color=0xFF0000)  # red 
 add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  # green
 
+for name in mks_names:
+
+    add_sphere(viewer, f"world/{name}", radius=0.01, color=0xff0000)
 
 
 # Background/grid
@@ -338,6 +345,10 @@ for i in range(len(q_ref)):
 
     safe_place(viewer,"COP_right",  cop1[i])
     safe_place(viewer, "COP_left", cop2[i])
+    frame = mks_dict[i]
+    for name in mks_names:
+        pos= frame[name].reshape(3,)
+        place(viewer, name, pos)
 
 
     viz_human.display(q_ref[i])

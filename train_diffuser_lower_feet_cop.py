@@ -9,6 +9,40 @@ import random
 import json
 from utils.diffuser_utils import DDPM 
 
+import random
+
+def split_subjects(subjects, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    dynamic split.
+    
+    Args:
+        subjects (list): liste de dossiers sujets
+        train_ratio (float): proportion train
+        val_ratio (float): proportion validation
+        seed (int): reproductibilité
+    
+    Returns:
+        train, val, test
+    """
+    
+    assert 0 < train_ratio < 1
+    assert 0 < val_ratio < 1
+    assert train_ratio + val_ratio < 1
+
+    subjects = subjects.copy()
+    random.seed(seed)
+    random.shuffle(subjects)
+
+    n = len(subjects)
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    train = subjects[:n_train]
+    val = subjects[n_train:n_train + n_val]
+    test = subjects[n_train + n_val:]
+
+    return train, val, test
+
 # ==========================================
 # 1. DATASET 
 # ==========================================
@@ -110,40 +144,31 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/Vinc")
 
-    results_dir = Path("results_feet_cop")
+    results_dir = Path("results_feet_Vinc")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    assert len(subjects) == 1, "⚠️ Tu as plus d'un sujet"
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+    # task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    # squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    # random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
 
-    subject = subjects[0]
-
-    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
-
-    print(f"Total trials: {len(trials)}")
-
-    random.seed(42)
-    random.shuffle(trials)
-
-    n = len(trials)
-    train_trials = trials[:int(0.7*n)]
-    val_trials   = trials[int(0.7*n):int(0.85*n)]
-    test_trials  = trials[int(0.85*n):]
+    train_trials, val_trials, test_trials = split_subjects(subjects, train_ratio=0.7, val_ratio=0.15)
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
-    print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
-    print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
-
+    print(f"TOTAL subjects: {len(subjects)}")
+    print(f"TRAIN ({len(train_trials)}): {[s.name for s in train_trials]}")
+    print(f"VAL   ({len(val_trials)}): {[s.name for s in val_trials]}")
+    print(f"TEST  ({len(test_trials)}): {[s.name for s in test_trials]}")
+    print("=" * 40)
 
     def get_pairs(trials):
         pairs = []
         
         for t in trials:
             if t.is_dir():
-                f = t / "kinetics.npy"
+                f = t / "kinetics_feet.npy"
                 j = t / "all_joints.npy"
 
                 if f.exists() and j.exists():

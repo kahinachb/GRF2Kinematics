@@ -20,7 +20,7 @@ from pathlib import Path
 import meshcat.geometry as g
 
 
-which = 'Vinc'
+which = 'Anais'
 fps = 100
 dt = 1.0 / fps
 
@@ -48,23 +48,23 @@ def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
     # Envoi au viewer Meshcat
     viewer[name].set_object(g.Line(g.PointsGeometry(points), 
                                    g.LineBasicMaterial(color=color, linewidth=3)))
-viewer = meshcat.Visualizer()
+# viewer = meshcat.Visualizer()
 
-# Repères de pieds et pelvis
-for side in ["R", "L"]:
-    meshcat_shapes.frame(viewer[f"Foot_{side}"], axis_length=0.2, axis_thickness=0.01)
-meshcat_shapes.frame(viewer["pelvis"], axis_length=0.2, axis_thickness=0.01)
+# # Repères de pieds et pelvis
+# for side in ["R", "L"]:
+#     meshcat_shapes.frame(viewer[f"Foot_{side}"], axis_length=0.2, axis_thickness=0.01)
+# meshcat_shapes.frame(viewer["pelvis"], axis_length=0.2, axis_thickness=0.01)
 
-# Sphères de COP
-add_sphere(viewer, "world/COP_right", radius=0.015, color=0xFF8800) # Orange
-add_sphere(viewer, "world/COP_left",  radius=0.015, color=0x0000FF) # Bleu
-add_sphere(viewer, "world/COP_platform_global", radius=0.018, color=0x00FF00) # Vert
-add_sphere(viewer, "world/COP_RNEA",  radius=0.018, color=0xFF0000) # Rouge
+# # Sphères de COP
+# add_sphere(viewer, "world/COP_right", radius=0.015, color=0xFF8800) # Orange
+# add_sphere(viewer, "world/COP_left",  radius=0.015, color=0x0000FF) # Bleu
+# add_sphere(viewer, "world/COP_platform_global", radius=0.018, color=0x00FF00) # Vert
+# add_sphere(viewer, "world/COP_RNEA",  radius=0.018, color=0xFF0000) # Rouge
 
 # --- BOUCLE SUR LES TRIALS ---
-for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
+for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
     trial_dir = path_joint.parent
-    path_kinetics = trial_dir / "kinetics_glob_filtered_.csv"
+    path_kinetics = trial_dir / "kinetics_glob_filtered.csv"
 
     if not path_kinetics.exists():
         continue
@@ -73,11 +73,15 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
     urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
     model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
     data_h = model_h.createData()
-    viz_human = MeshcatVisualizer(model_h, coll_h, vis_h)
-    viz_human.initViewer(viewer, open=True)
-    viz_human.loadViewerModel("ref", color=[0.0, 1.0, 0.0, 0.8])
+    # viz_human = MeshcatVisualizer(model_h, coll_h, vis_h)
+    # viz_human.initViewer(viewer, open=True)
+    # viz_human.loadViewerModel("ref", color=[0.0, 1.0, 0.0, 0.8])
 
     trial = trial_dir.name
+    allowed = ["static", "dyna", "lufe", "luyo", "walk", "bend"]
+
+    if not any(key in trial for key in allowed):
+        continue
 
 
     # 👉 équivalent de ton trial_id
@@ -91,8 +95,14 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
 
     print(f"Processing: {trial_id}")
 
-    q_ref = pd.read_csv(path_joint).to_numpy(dtype=float)
+    q_ref = pd.read_csv(path_joint) #.to_numpy(dtype=float)
+    #q_ref = q_ref[1:-10] #Vinc data
+    q_ref = q_ref.iloc[::3].reset_index(drop=True) #Anais data
+    q_ref= q_ref[1:-20].to_numpy(dtype=float)
+
     df_cop = pd.read_csv(path_kinetics)
+    print(q_ref.shape)
+    print(df_cop.shape)
     
     # Calcul v et a pour RNEA
     n_samples = len(q_ref)
@@ -134,8 +144,10 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
         # 3. Extraction et calcul COP Global Plateformes
         F_w1 = np.array([df_cop["Fx1_glob"][i], df_cop["Fy1_glob"][i], df_cop["Fz1_glob"][i]])
         F_w2 = np.array([df_cop["Fx2_glob"][i], df_cop["Fy2_glob"][i], df_cop["Fz2_glob"][i]])
+
         M_w1 = np.array([df_cop["Mx1_glob"][i], df_cop["My1_glob"][i], df_cop["Mz1_glob"][i]])
         M_w2 = np.array([df_cop["Mx2_glob"][i], df_cop["My2_glob"][i], df_cop["Mz2_glob"][i]])
+
         cop_w1 = np.array([df_cop["COPx1_glob"][i], df_cop["COPy1_glob"][i], df_cop["COPz1_glob"][i]])
         cop_w2 = np.array([df_cop["COPx2_glob"][i], df_cop["COPy2_glob"][i], df_cop["COPz2_glob"][i]])
         
@@ -151,17 +163,17 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
         T_w_fR = get_foot_pose(mks_pos, side='right')
         T_w_fL = get_foot_pose(mks_pos, side='left')
 
-        # Pied Droit
-        R_fR, P_fR = T_w_fR[:3, :3], T_w_fR[:3, 3]
-        F_locR = R_fR.T @ F_w1
-        M_locR = R_fR.T @ (M_w1 - np.cross(P_fR, F_w1))
-        cop_locR = R_fR.T @ (cop_w1 - P_fR)
+        # Pied Droit #Anais : left 1 right 2, synth, vinc & hum : left 2 et right 1
+        R_fL, P_fL = T_w_fL[:3, :3], T_w_fL[:3, 3]
+        F_locL = R_fL.T @ F_w1
+        M_locL = R_fL.T @ (M_w1 - np.cross(P_fL, F_w1))
+        cop_locL = R_fL.T @ (cop_w1 - P_fL)
 
         # Pied Gauche
-        R_fL, P_fL = T_w_fL[:3, :3], T_w_fL[:3, 3]
-        F_locL = R_fL.T @ F_w2
-        M_locL = R_fL.T @ (M_w2 - np.cross(P_fL, F_w2))
-        cop_locL = R_fL.T @ (cop_w2 - P_fL)
+        R_fR, P_fR = T_w_fR[:3, :3], T_w_fR[:3, 3]
+        F_locR = R_fR.T @ F_w2
+        M_locR = R_fR.T @ (M_w2 - np.cross(P_fR, F_w2))
+        cop_locR = R_fR.T @ (cop_w2 - P_fR)
 
         # --- BACK TO WORLD ---
         
@@ -178,9 +190,9 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
         cop_world_check = (R_fR @ cop_locR) + P_fR
 
         # --- COMPARAISON (Vérification de l'erreur) ---
-        error_F = np.linalg.norm(F_w1 - F_world_check)
-        error_M = np.linalg.norm(M_w1 - M_world_check)
-        error_COP = np.linalg.norm(cop_w1 - cop_world_check)
+        error_F = np.linalg.norm(F_w2 - F_world_check)
+        error_M = np.linalg.norm(M_w2 - M_world_check)
+        error_COP = np.linalg.norm(cop_w2 - cop_world_check)
 
         if error_F > 1e-6 or error_M > 1e-6:
             print(f"!!! Erreur de calcul au frame {i} !!!")
@@ -190,28 +202,29 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
 
 
         # 5. Affichage
-        set_tf(viewer, "pelvis", pin.SE3(R_p, pos_bassin).homogeneous)
-        set_tf(viewer, "Foot_R", T_w_fR)
-        set_tf(viewer, "Foot_L", T_w_fL)
+        # set_tf(viewer, "pelvis", pin.SE3(R_p, pos_bassin).homogeneous)
+        # set_tf(viewer, "Foot_R", T_w_fR)
+        # set_tf(viewer, "Foot_L", T_w_fL)
         
-        safe_place(viewer, "COP_right", cop_w1)
-        safe_place(viewer, "COP_left", cop_w2)
-        safe_place(viewer, "COP_platform_global", cop_global)
-        safe_place(viewer, "COP_RNEA", cop_rnea)
+        # safe_place(viewer, "COP_right", cop_w1)
+        # safe_place(viewer, "COP_left", cop_w2)
+        # safe_place(viewer, "COP_platform_global", cop_global)
+        # safe_place(viewer, "COP_RNEA", cop_rnea)
         
-        draw_force_arrow(viewer, "force_R", cop_w1, F_w1, color=0xFF8800)
-        draw_force_arrow(viewer, "force_L", cop_w2, F_w2, color=0x0000FF)
+        # draw_force_arrow(viewer, "force_R", cop_w1, F_w1, color=0xFF8800)
+        # draw_force_arrow(viewer, "force_L", cop_w2, F_w2, color=0x0000FF)
 
-        viz_human.display(q_curr)
+        # viz_human.display(q_curr)
 
         # 6. Sauvegarde des données pieds
         results_feet.append({
-            'Fx1': F_locR[0], 'Fy1': F_locR[1], 'Fz1': F_locR[2],
-            'Mx1': M_locR[0], 'My1': M_locR[1], 'Mz1': M_locR[2],
-            'COPx1': cop_locR[0], 'COPy1': cop_locR[1], 'COPz1': cop_locR[2],
-            'Fx2': F_locL[0], 'Fy2': F_locL[1], 'Fz2': F_locL[2],
-            'Mx2': M_locL[0], 'My2': M_locL[1], 'Mz2': M_locL[2],
-            'COPx2': cop_locL[0], 'COPy2': cop_locL[1], 'COPz2': cop_locL[2]
+            'Fx1': F_locL[0], 'Fy1': F_locL[1], 'Fz1': F_locL[2],
+            'Mx1': M_locL[0], 'My1': M_locL[1], 'Mz1': M_locL[2],
+            'COPx1': cop_locL[0], 'COPy1': cop_locL[1], 'COPz1': cop_locL[2],
+
+            'Fx2': F_locR[0], 'Fy2': F_locR[1], 'Fz2': F_locR[2],
+            'Mx2': M_locR[0], 'My2': M_locR[1], 'Mz2': M_locR[2],
+            'COPx2': cop_locR[0], 'COPy2': cop_locR[1], 'COPz2': cop_locR[2]
         })
 
         data_plot['R']['F'].append(F_locR)
@@ -254,12 +267,12 @@ for path_joint in base_dir.glob("*/*/joints_filtered_.csv"):
         axs[2].grid(True)
 
         plt.tight_layout()
-        plt.savefig(f"plot_{side_key}_{t_id}.png")
-        # plt.show()
+        # plt.savefig(f"plot_{side_key}_{t_id}.png")
+        plt.show()
 
     # Affichage des plots (bloquant jusqu'à fermeture)
-    plot_side_data('R', 'RIGHT', trial_id)
-    plot_side_data('L', 'LEFT', trial_id)
+    # plot_side_data('R', 'RIGHT', trial_id)
+    # plot_side_data('L', 'LEFT', trial_id)
 
     # Sauvegarde CSV du trial
     pd.DataFrame(results_feet).to_csv(output_path, index=False)
