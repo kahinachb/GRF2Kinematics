@@ -29,6 +29,40 @@ class DDPM:
         sqrt_1ab = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1)
         return sqrt_ab * x_0 + sqrt_1ab * noise
 
+    def sample_reverse_norm(self, model, x_t, t, cond):
+        """One reverse step p(x_{t-1} | x_t, cond).
+
+        Args:
+            model : DiffusionTransformer
+            x_t   : (B, T, D)  current noisy signal
+            t     : int         current diffusion step
+            cond  : (B, T, len(kinetics)) kinetics condition
+        Returns:
+            x_{t-1} : (B, T, D)
+        """
+        z          = torch.randn_like(x_t) if t > 0 else torch.zeros_like(x_t)
+        # z = torch.zeros_like(x_t)
+        beta_t     = self.betas[t]
+        alpha_t    = self.alphas[t]
+        alpha_bar  = self.alphas_cumprod[t]
+        if t > 0:
+            alpha_bar_prev = self.alphas_cumprod[t-1]
+        else:
+            alpha_bar_prev = torch.tensor(1.0, device=self.device)
+
+        beta_tilde = beta_t * (1 - alpha_bar_prev) / (1 - alpha_bar)
+
+
+        t_norm     = torch.full((x_t.shape[0],), t / self.n_steps,
+                                device=self.device, dtype=torch.float32)
+        
+        eps_theta  = model(x_t, t_norm, cond)
+
+        mean       = (1.0 / torch.sqrt(alpha_t)) * (
+            x_t - (beta_t / torch.sqrt(1.0 - alpha_bar)) * eps_theta
+        )
+        return mean + torch.sqrt(beta_tilde) * z
+    
     def sample_reverse(self, model, x_t, t, cond):
         """One reverse step p(x_{t-1} | x_t, cond).
 

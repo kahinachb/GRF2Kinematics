@@ -51,7 +51,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:19]
+            j_data = j_data[:, 6:18]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -73,7 +73,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:19]
+    j_cat= j_cat[:, 6:18]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -109,7 +109,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 6:18]
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -130,7 +130,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         
         for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
             with torch.no_grad():
-                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+                curr_j = ddpm.sample_reverse_norm(model, curr_j, t_idx, f_win)
         
         full_pred[start:end] += curr_j.squeeze(0)
         count_map[start:end] += 1.0
@@ -190,7 +190,7 @@ def run_experiment():
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1 
+    epochs = 500
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
@@ -235,7 +235,7 @@ def run_experiment():
     curr_j = torch.randn((1, 128, 12)).to(device)
     for t_idx in reversed(range(ddpm.n_steps)):
         with torch.no_grad():
-            curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_in)
+            curr_j = ddpm.sample_reverse_norm(model, curr_j, t_idx, f_in)
 
     pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
     ref = (j_ref * stats['j_s']) + stats['j_m']

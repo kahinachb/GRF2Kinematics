@@ -9,6 +9,39 @@ import random
 import json
 from utils.diffuser_utils import DDPM 
 
+
+def split_subjects(subjects, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    dynamic split.
+    
+    Args:
+        subjects (list): liste de dossiers sujets
+        train_ratio (float): proportion train
+        val_ratio (float): proportion validation
+        seed (int): reproductibilité
+    
+    Returns:
+        train, val, test
+    """
+    
+    assert 0 < train_ratio < 1
+    assert 0 < val_ratio < 1
+    assert train_ratio + val_ratio < 1
+
+    subjects = subjects.copy()
+    random.seed(seed)
+    random.shuffle(subjects)
+
+    n = len(subjects)
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    train = subjects[:n_train]
+    val = subjects[n_train:n_train + n_val]
+    test = subjects[n_train + n_val:]
+
+    return train, val, test
+
 # ==========================================
 # 1. DATASET 
 # ==========================================
@@ -17,7 +50,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:19]
+            j_data = j_data[:, 6:18]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -39,7 +72,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:19]
+    j_cat= j_cat[:, 6:18]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -123,7 +156,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 6:18]
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -158,34 +191,22 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/Vinc")
 
-    results_dir = Path("results_PE_sinT")
+    results_dir = Path("results_PE_sinT_Vinc")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    if len(subjects) > 1:
-        print("⚠️ Tu as plus d'un sujet")
-        print (subjects)
-        subject = subjects[0]
-        print(subject)
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+ 
 
-    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
-
-    print(f"Total trials: {len(trials)}")
-
-    random.seed(42)
-    random.shuffle(trials)
-
-    n = len(trials)
-    train_trials = trials[:int(0.7*n)]
-    val_trials   = trials[int(0.7*n):int(0.85*n)]
-    test_trials  = trials[int(0.85*n):]
+    train_trials, val_trials, test_trials = split_subjects(subjects, train_ratio=0.7, val_ratio=0.15)
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
-    print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
-    print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
+    print(f"TOTAL subjects: {len(subjects)}")
+    print(f"TRAIN ({len(train_trials)}): {[s.name for s in train_trials]}")
+    print(f"VAL   ({len(val_trials)}): {[s.name for s in val_trials]}")
+    print(f"TEST  ({len(test_trials)}): {[s.name for s in test_trials]}")
+    print("=" * 40)
 
 
     def get_pairs(trials):
@@ -215,7 +236,7 @@ def run_experiment():
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1 
+    epochs = 500
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
