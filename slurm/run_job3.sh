@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=10
 #SBATCH --time=20:00:00
-#SBATCH --output=LOGgrf2kine/out/%j.out
-#SBATCH --error=LOGgrf2kine/err/%j.err
+#SBATCH --output=LOG_PE_sin_c/out/%j.out
+#SBATCH --error=LOG_PE_sin_c/err/%j.err
 #SBATCH --hint=nomultithread
 #SBATCH --exclusive
 
