@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import json
-from utils.diffuser_utils import DDPM, DiffusionTransformer
+from utils.diffuser_utils import DDPM
 import torch.nn as nn
 
 
@@ -79,19 +79,70 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     
     return j_raw, final_pred.numpy()
 
+# ==========================================
+# 2. ARCHITECTURE
+# ==========================================
+import math
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
+        super().__init__()
+        pe = torch.zeros(1, max_len, d_model)
+        position = torch.arange(max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
+
+# ---> ADDED: Sinusoidal Timestep Embedding Class <---
+class SinusoidalTimeEmbeddings(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        # time: 1D tensor of shape (batch_size,)
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
 class DiffusionTransformer(nn.Module):
     def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
-        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
+        
+        # ---> MODIFIED: Time embedding now uses Sinusoidal + MLP <---
+        self.time_mlp = nn.Sequential(
+            SinusoidalTimeEmbeddings(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        ) 
+        
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
         layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
         self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
-        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
-        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
+        # Pass raw integer 't' through the time_mlp
+        if isinstance(t, (int, float)):
+            t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
+        elif t.dim() == 0:
+            t = t.unsqueeze(0).expand(x.shape[0])
+            
+        t_emb = self.time_mlp(t).unsqueeze(1) 
+        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb 
+        x_emb = self.pos_encoder(x_emb) 
         return self.output_layer(self.transformer(x_emb))
 
 
@@ -136,7 +187,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 3. INITIALIZE DDPM =====
     print("\n[3/5] Initializing DDPM...")
-    ddpm = DDPM(device, n_steps=2000)
+    ddpm = DDPM(device, n_steps=1000)
     print(f"  ✓ DDPM initialized with {ddpm.n_steps} steps")
     
     # ===== 4. LOCATE DATA FILES =====
@@ -159,7 +210,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[5/5] Running inference...")
     j_ref, j_pred = predict_full_trial(
         model, ddpm, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=2000
+        window_size=128, stride=64, inference_steps=1000
     )
     
     # ===== 6. SAVE RESULTS =====
@@ -225,14 +276,18 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
+    # SUBJECT_NAME = "s1"     
+    # TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
+
     SUBJECT_NAME = "Jeremy"     
     TRIAL_NAME = "Trial111"           
+          
     
-    MODEL_PATH = "./results_feet_cop/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./results_feet_cop/scalers_concat.json"
-    # DATA_ROOT = "./processed_data_global"
+    MODEL_PATH = "./training_res/results_PE_sin_aug/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./training_res/results_PE_sin_aug/scalers_concat.json"
     DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
-    OUTPUT_DIR = "./inference_results_feet_cop"
+    # DATA_ROOT = "./DATA/synth_data/"
+    OUTPUT_DIR = "./inference_results_PE_sin_aug"
     
     # ===== RUN INFERENCE =====
     run_inference(

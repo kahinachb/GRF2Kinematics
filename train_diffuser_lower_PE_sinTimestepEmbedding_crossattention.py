@@ -175,7 +175,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_PE_sin_cross")
+    results_dir = Path("results_PE_sin_cross_fixed")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
@@ -227,10 +227,10 @@ def run_experiment():
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
     model = DiffusionTransformer().to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=2e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1 
+    epochs = 500
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
@@ -247,7 +247,9 @@ def run_experiment():
             # On normalise t pour le modèle (0 à 1)
             pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
-            loss.backward(); optimizer.step()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
+            optimizer.step()
             t_loss += loss.item()
         
         model.eval()

@@ -139,7 +139,6 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         
         curr_j = torch.randn((1, window_size, 12)).to(device)
         
-        # Reverse Diffusion avec DDPM (sur 50 steps pour plus de vitesse en inférence)
         inference_steps = 1000 
         step_size = ddpm.n_steps // inference_steps
         
@@ -230,7 +229,6 @@ def run_experiment():
             j_noisy = ddpm.sample_forward(j, t, noise)
             
             optimizer.zero_grad()
-            # On normalise t pour le modèle (0 à 1)
             pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
             loss.backward(); optimizer.step()

@@ -68,7 +68,7 @@ print("\nFirst 5 rows:")
 plt.figure(figsize=(14, 8))
 
 for i in range(data.shape[1]):
-    plt.plot(data[:, 7], label=labels[i])
+    plt.plot(data[:, 6], label=labels[i])
 
 plt.xlabel("Frame")
 plt.ylabel("Value")

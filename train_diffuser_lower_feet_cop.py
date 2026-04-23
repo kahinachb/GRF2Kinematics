@@ -91,7 +91,6 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         
         curr_j = torch.randn((1, window_size, 12)).to(device)
         
-        # Reverse Diffusion avec DDPM (sur 50 steps pour plus de vitesse en inférence)
         inference_steps = 1000 
         step_size = ddpm.n_steps // inference_steps
         
