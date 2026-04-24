@@ -258,7 +258,7 @@ def run_experiment():
     ddpm = DDPM(device, n_steps=1000)
     model = DiffusionTransformer().to(device)
     # model = DiffusionTransformerConcat().to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=2e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     train_losses, val_losses = [], []
 
     epochs = 1 
@@ -278,7 +278,9 @@ def run_experiment():
             # On normalise t pour le modèle (0 à 1)
             pred_noise = model(j_noisy, t.float() / ddpm.n_steps, f)
             loss = nn.MSELoss()(pred_noise, noise)
-            loss.backward(); optimizer.step()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
+            optimizer.step()
             t_loss += loss.item()
         
         model.eval()
