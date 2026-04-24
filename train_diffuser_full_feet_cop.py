@@ -109,7 +109,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=29, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
