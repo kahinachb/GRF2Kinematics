@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
-from utils.model_utils import build_human_model, get_foot_pose
+from utils.model_utils import build_human_model, get_foot_pose,get_foot_pose_hum
 from utils.utils import find_col
 from utils.viz_utils import add_sphere, place, set_tf, safe_place
 from pathlib import Path
@@ -26,12 +26,29 @@ dt = 1.0 / fps
 
 base_dir = Path(f"DATA/{which}")
 
+if which in ['HUMANOIDS', 'Vinc']:
+    plate_L = '2'
+    plate_R = '1'
+elif which == 'Anais':
+    plate_L = '1'
+    plate_R = '2'
+else:
+    raise ValueError(f"Dataset '{which}' mapping is not defined!")
+
 urdf_meshes_path = "motif/model/human_urdf"
 
-needed_markers = [
-    'r_mankle_study', 'r_ankle_study', 'r_toe_study', 'r_5meta_study', 'r_calc_study',
-    'L_mankle_study', 'L_ankle_study', 'L_toe_study', 'L_5meta_study', 'L_calc_study'
+if which == 'HUMANOIDS':
+    needed_markers = [
+    'RMANK', 'RANK', 'R5MHD', 'RTOE', 'RHEE',
+    'LMANK', 'LANK', 'L5MHD', 'LTOE', 'LHEE',
 ]
+else: 
+
+    needed_markers = [
+        'r_mankle_study', 'r_ankle_study', 'r_toe_study', 'r_5meta_study', 'r_calc_study',
+        'L_mankle_study', 'L_ankle_study', 'L_toe_study', 'L_5meta_study', 'L_calc_study'
+    ]
+
 
 
 def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
@@ -50,7 +67,7 @@ def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
                                    g.LineBasicMaterial(color=color, linewidth=3)))
 # viewer = meshcat.Visualizer()
 
-# # Repères de pieds et pelvis
+# Repères de pieds et pelvis
 # for side in ["R", "L"]:
 #     meshcat_shapes.frame(viewer[f"Foot_{side}"], axis_length=0.2, axis_thickness=0.01)
 # meshcat_shapes.frame(viewer["pelvis"], axis_length=0.2, axis_thickness=0.01)
@@ -61,8 +78,7 @@ def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
 # add_sphere(viewer, "world/COP_platform_global", radius=0.018, color=0x00FF00) # Vert
 # add_sphere(viewer, "world/COP_RNEA",  radius=0.018, color=0xFF0000) # Rouge
 
-# --- BOUCLE SUR LES TRIALS ---
-for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
+for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
     trial_dir = path_joint.parent
     path_kinetics = trial_dir / "kinetics_glob_filtered.csv"
 
@@ -70,6 +86,7 @@ for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
         continue
 
     subject = trial_dir.parent.name
+    # subject_base = subject.rstrip('0123456789')
     urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
     model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
     data_h = model_h.createData()
@@ -78,31 +95,27 @@ for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
     # viz_human.loadViewerModel("ref", color=[0.0, 1.0, 0.0, 0.8])
 
     trial = trial_dir.name
-    allowed = ["static", "dyna", "lufe", "luyo", "walk", "bend"]
+    if which == 'Anais':
+        allowed = ["static", "dyna", "lufe", "luyo", "walk", "bend"]
 
-    if not any(key in trial for key in allowed):
-        continue
+        if not any(key in trial for key in allowed):
+            continue
 
 
-    # 👉 équivalent de ton trial_id
     trial_id = f"{subject}_{trial}"
 
     output_path = trial_dir / f"kinetics_feet.csv"
 
-    if output_path.exists():
-        print(f"Skipping: {trial_id} (déjà traité)")
-        continue
 
     print(f"Processing: {trial_id}")
 
-    q_ref = pd.read_csv(path_joint) #.to_numpy(dtype=float)
-    #q_ref = q_ref[1:-10] #Vinc data
-    q_ref = q_ref.iloc[::3].reset_index(drop=True) #Anais data
-    q_ref= q_ref[1:-20].to_numpy(dtype=float)
+    q_ref = pd.read_csv(path_joint).iloc[1:,:].to_numpy(dtype=float)
+
 
     df_cop = pd.read_csv(path_kinetics)
-    print(q_ref.shape)
-    print(df_cop.shape)
+    # print(q_ref.shape)
+    # print(df_cop.shape)
+    # input()
     
     # Calcul v et a pour RNEA
     n_samples = len(q_ref)
@@ -142,63 +155,62 @@ for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
         cop_rnea = np.array([-M_rnea[1]/F_rnea[2], M_rnea[0]/F_rnea[2], 0.0])
 
         # 3. Extraction et calcul COP Global Plateformes
-        F_w1 = np.array([df_cop["Fx1_glob"][i], df_cop["Fy1_glob"][i], df_cop["Fz1_glob"][i]])
-        F_w2 = np.array([df_cop["Fx2_glob"][i], df_cop["Fy2_glob"][i], df_cop["Fz2_glob"][i]])
+        F_wL = np.array([df_cop[f"Fx{plate_L}_glob"][i], df_cop[f"Fy{plate_L}_glob"][i], df_cop[f"Fz{plate_L}_glob"][i]])
+        F_wR = np.array([df_cop[f"Fx{plate_R}_glob"][i], df_cop[f"Fy{plate_R}_glob"][i], df_cop[f"Fz{plate_R}_glob"][i]])
 
-        M_w1 = np.array([df_cop["Mx1_glob"][i], df_cop["My1_glob"][i], df_cop["Mz1_glob"][i]])
-        M_w2 = np.array([df_cop["Mx2_glob"][i], df_cop["My2_glob"][i], df_cop["Mz2_glob"][i]])
+        M_wL = np.array([df_cop[f"Mx{plate_L}_glob"][i], df_cop[f"My{plate_L}_glob"][i], df_cop[f"Mz{plate_L}_glob"][i]])
+        M_wR = np.array([df_cop[f"Mx{plate_R}_glob"][i], df_cop[f"My{plate_R}_glob"][i], df_cop[f"Mz{plate_R}_glob"][i]])
 
-        cop_w1 = np.array([df_cop["COPx1_glob"][i], df_cop["COPy1_glob"][i], df_cop["COPz1_glob"][i]])
-        cop_w2 = np.array([df_cop["COPx2_glob"][i], df_cop["COPy2_glob"][i], df_cop["COPz2_glob"][i]])
+        cop_wL = np.array([df_cop[f"COPx{plate_L}_glob"][i], df_cop[f"COPy{plate_L}_glob"][i], df_cop[f"COPz{plate_L}_glob"][i]])
+        cop_wR = np.array([df_cop[f"COPx{plate_R}_glob"][i], df_cop[f"COPy{plate_R}_glob"][i], df_cop[f"COPz{plate_R}_glob"][i]])
         
-        Fz_total = F_w1[2] + F_w2[2]
+        Fz_total = F_wL[2] + F_wR[2]
         if Fz_total > 10: # Évite division par zéro si sujet en l'air
-            cop_global = (F_w1[2]*cop_w1 + F_w2[2]*cop_w2) / Fz_total
+            cop_global = (F_wL[2]*cop_wL + F_wR[2]*cop_wR) / Fz_total
             cop_global[2] = 0.0
         else:
             cop_global = np.array([0,0,0])
 
         # 4. Transformation Repère Pieds
         mks_pos = {n: data_h.oMf[model_h.getFrameId(n)].translation for n in needed_markers}
-        T_w_fR = get_foot_pose(mks_pos, side='right')
-        T_w_fL = get_foot_pose(mks_pos, side='left')
 
-        # Pied Droit #Anais : left 1 right 2, synth, vinc & hum : left 2 et right 1
-        R_fL, P_fL = T_w_fL[:3, :3], T_w_fL[:3, 3]
-        F_locL = R_fL.T @ F_w1
-        M_locL = R_fL.T @ (M_w1 - np.cross(P_fL, F_w1))
-        cop_locL = R_fL.T @ (cop_w1 - P_fL)
+        # for f in model_h.frames:
+        #     print(f.name)
+
+        if which == 'HUMANOIDS':
+           T_w_fR =  get_foot_pose_hum(mks_pos, side='right')
+           T_w_fL = get_foot_pose_hum(mks_pos, side='left')
+        else: 
+            T_w_fR = get_foot_pose(mks_pos, side='right')
+            T_w_fL = get_foot_pose(mks_pos, side='left')
 
         # Pied Gauche
+        R_fL, P_fL = T_w_fL[:3, :3], T_w_fL[:3, 3]
+        F_locL = R_fL.T @ F_wL
+        M_locL = R_fL.T @ (M_wL - np.cross(P_fL, F_wL))
+        cop_locL = R_fL.T @ (cop_wL - P_fL)
+
+        # Pied Droit
         R_fR, P_fR = T_w_fR[:3, :3], T_w_fR[:3, 3]
-        F_locR = R_fR.T @ F_w2
-        M_locR = R_fR.T @ (M_w2 - np.cross(P_fR, F_w2))
-        cop_locR = R_fR.T @ (cop_w2 - P_fR)
+        F_locR = R_fR.T @ F_wR
+        M_locR = R_fR.T @ (M_wR - np.cross(P_fR, F_wR))
+        cop_locR = R_fR.T @ (cop_wR - P_fR)
 
         # --- BACK TO WORLD ---
         
-        # 1. Re-transformation de la Force vers World
         F_world_check = R_fR @ F_locR
-        
-        # 2. Re-transformation du Moment vers World
-        # Attention : On doit inverser le transport de moment
-        # M_w = (R @ M_loc) + (P_foot ^ F_world)
         M_world_check = (R_fR @ M_locR) + np.cross(P_fR, F_world_check)
-        
-        # 3. Re-transformation du COP vers World
-        # cop_w = (R @ cop_loc) + P_foot
         cop_world_check = (R_fR @ cop_locR) + P_fR
 
         # --- COMPARAISON (Vérification de l'erreur) ---
-        error_F = np.linalg.norm(F_w2 - F_world_check)
-        error_M = np.linalg.norm(M_w2 - M_world_check)
-        error_COP = np.linalg.norm(cop_w2 - cop_world_check)
+        error_F = np.linalg.norm(F_wR - F_world_check)
+        error_M = np.linalg.norm(M_wR - M_world_check)
+        error_COP = np.linalg.norm(cop_wR - cop_world_check)
 
         if error_F > 1e-6 or error_M > 1e-6:
             print(f"!!! Erreur de calcul au frame {i} !!!")
             print(f"Erreur Force: {error_F}, Erreur Moment: {error_M}, Erreur COP: {error_COP}")
-        else: 
-            print("no problem")
+
 
 
         # 5. Affichage
@@ -206,26 +218,37 @@ for path_joint in base_dir.glob("*/*/joints_whole_body.csv"):
         # set_tf(viewer, "Foot_R", T_w_fR)
         # set_tf(viewer, "Foot_L", T_w_fL)
         
-        # safe_place(viewer, "COP_right", cop_w1)
-        # safe_place(viewer, "COP_left", cop_w2)
+        # safe_place(viewer, "COP_right", cop_wR)
+        # safe_place(viewer, "COP_left", cop_wL)
         # safe_place(viewer, "COP_platform_global", cop_global)
         # safe_place(viewer, "COP_RNEA", cop_rnea)
         
-        # draw_force_arrow(viewer, "force_R", cop_w1, F_w1, color=0xFF8800)
-        # draw_force_arrow(viewer, "force_L", cop_w2, F_w2, color=0x0000FF)
+        # draw_force_arrow(viewer, "force_L", cop_wL, F_wL, color=0x0000FF)
+        # draw_force_arrow(viewer, "force_R", cop_wR, F_wR, color=0xFF8800)
 
         # viz_human.display(q_curr)
 
         # 6. Sauvegarde des données pieds
-        results_feet.append({
-            'Fx1': F_locL[0], 'Fy1': F_locL[1], 'Fz1': F_locL[2],
-            'Mx1': M_locL[0], 'My1': M_locL[1], 'Mz1': M_locL[2],
-            'COPx1': cop_locL[0], 'COPy1': cop_locL[1], 'COPz1': cop_locL[2],
+        if which == "Anais":
+            results_feet.append({
+                'Fx1': F_locL[0], 'Fy1': F_locL[1], 'Fz1': F_locL[2],
+                'Mx1': M_locL[0], 'My1': M_locL[1], 'Mz1': M_locL[2],
+                'COPx1': cop_locL[0], 'COPy1': cop_locL[1], 'COPz1': cop_locL[2],
 
-            'Fx2': F_locR[0], 'Fy2': F_locR[1], 'Fz2': F_locR[2],
-            'Mx2': M_locR[0], 'My2': M_locR[1], 'Mz2': M_locR[2],
-            'COPx2': cop_locR[0], 'COPy2': cop_locR[1], 'COPz2': cop_locR[2]
-        })
+                'Fx2': F_locR[0], 'Fy2': F_locR[1], 'Fz2': F_locR[2],
+                'Mx2': M_locR[0], 'My2': M_locR[1], 'Mz2': M_locR[2],
+                'COPx2': cop_locR[0], 'COPy2': cop_locR[1], 'COPz2': cop_locR[2]
+            })
+        else :
+            results_feet.append({
+                    'Fx1': F_locR[0], 'Fy1': F_locR[1], 'Fz1': F_locR[2],
+                    'Mx1': M_locR[0], 'My1': M_locR[1], 'Mz1': M_locR[2],
+                    'COPx1': cop_locR[0], 'COPy1': cop_locR[1], 'COPz1': cop_locR[2],
+
+                    'Fx2': F_locL[0], 'Fy2': F_locL[1], 'Fz2': F_locL[2],
+                    'Mx2': M_locL[0], 'My2': M_locL[1], 'Mz2': M_locL[2],
+                    'COPx2': cop_locL[0], 'COPy2': cop_locL[1], 'COPz2': cop_locL[2]
+                })
 
         data_plot['R']['F'].append(F_locR)
         data_plot['R']['M'].append(M_locR)

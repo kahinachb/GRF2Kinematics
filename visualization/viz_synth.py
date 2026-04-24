@@ -31,11 +31,11 @@ meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0
          'right_foot_0','left_foot_0']
 
 
-path_joint = f"DATA/generated_human_like_motions_csv_new/joint_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
+path_joint = f"DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
 q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 
-cop_csv = f"DATA/generated_human_like_motions_csv_new/kinetics_glob_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
+cop_csv = f"DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/kinetics_glob_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
 df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 pelvis =False
    
@@ -164,6 +164,9 @@ data_plot = {
     'R': {'F': [], 'M': [], 'COP': []},
     'L': {'F': [], 'M': [], 'COP': []}
 }
+
+cop_fp =[]
+cop_rnea_list=[]
 for i in range(len(q_ref)):
 
     q_current = q_ref[i, :]
@@ -192,7 +195,7 @@ for i in range(len(q_ref)):
     
     F = f_world.linear
     M = f_world.angular
-    M = (R @ tau[3:6] ) + np.cross(pos_bassin , F)
+    # M = (R @ tau[3:6] ) + np.cross(pos_bassin , F)
     Fx, Fy, Fz = F
     Mx, My, Mz = M
 
@@ -216,17 +219,17 @@ for i in range(len(q_ref)):
     M_p2 = R_pelvis_world @ (M_world2 - np.cross(pos_bassin, F_world2))
 
     ###cop world 
-    cop_x1 = M_world1[1] / F_world1[2]
-    cop_y1 = -M_world1[0] / F_world1[2]
+    cop_x1 = -M_world1[1] / F_world1[2]
+    cop_y1 = M_world1[0] / F_world1[2]
     cop_z1 = 0.0
-    cop_x2 = M_world2[1] / F_world2[2]
-    cop_y2 =  -M_world2[0] / F_world2[2]
+    cop_x2 = -M_world2[1] / F_world2[2]
+    cop_y2 =  M_world2[0] / F_world2[2]
     cop_z2 = 0.0
     cop_world1 = np.array([cop_x1, cop_y1, cop_z1])
     cop_world2 = np.array([cop_x2, cop_y2, cop_z2])
     #from file 
-    cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
-    cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
+    # cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
+    # cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
 
     ##cop local 
     cop_p1 = R_pelvis_world @ (cop_world1 - pos_bassin)
@@ -253,6 +256,8 @@ for i in range(len(q_ref)):
 
     safe_place(viewer, "COP_platform_global", cop_global)
     safe_place(viewer,"COP_RNEA", cop_rnea)
+    cop_fp.append(cop_global)
+    cop_rnea_list.append(cop_rnea)
 
 
     mks_positions = {}
@@ -305,9 +310,24 @@ for i in range(len(q_ref)):
 
 
 
-    # viz_human.display(q_ref[i])
+    viz_human.display(q_ref[i])
     # input()
     # time.sleep(0.001)
+
+cop_fp = np.array(cop_fp)
+cop_rnea_list = np.array(cop_rnea_list)
+fig, axs = plt.subplots(3, 1, figsize=(8, 10))
+
+labels = ["X", "Y", "Z"]
+
+for i in range(3):
+    axs[i].plot(cop_fp[:, i], label="FP")
+    axs[i].plot(cop_rnea_list[:, i], label="RNEA")
+    axs[i].set_title(f"COP {labels[i]}")
+    axs[i].legend()
+
+plt.tight_layout()
+plt.show()
 
 def plot_side_data(side_key, full_name):
     # Conversion en numpy arrays pour faciliter le slicing [:, 0]

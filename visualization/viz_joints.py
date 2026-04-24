@@ -20,30 +20,32 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'Jeremy'
+subject = 'Kahina_6kg'
 
-task = 'Trial111'
-which = 'Vinc'
+task = 'squat_6kg'
+which = 'HUMANOIDS'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-df_mks= pd.read_csv(f"DATA/Vinc/{subject}/{task}_filled.csv")
-mks_dict, start_sample_dict = read_mks_data(df_mks, start_sample=0, converter=1000.0)
-mks_names = start_sample_dict.keys()
+# df_mks= pd.read_csv(f"DATA/Vinc/{subject}/{task}_filled.csv")
+# mks_dict, start_sample_dict = read_mks_data(df_mks, start_sample=0, converter=1000.0)
+# mks_names = start_sample_dict.keys()
 
 
 if which =='HUMANOIDS' or which=='Anais' or which=='Vinc':
-    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_.csv"
-    q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
+    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
+    q_ref_df = pd.read_csv(path_joint).iloc[1:,:]
 
-    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered_.csv"
+    cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
     df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
+    print(len(df_cop))
+    print(len(q_ref_df))
 
     X1 = to_m(df_cop[find_col(df_cop, "COPx1_glob")])
     Y1 = to_m(df_cop[find_col(df_cop, "COPy1_glob")])
@@ -192,9 +194,9 @@ add_sphere(viewer, "world/COP_left", radius=0.015, color=0xFF8800)  # orange
 add_sphere(viewer, "world/COP_RNEA",  radius=0.015, color=0xFF0000)  # red 
 add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  # green
 
-for name in mks_names:
+# for name in mks_names:
 
-    add_sphere(viewer, f"world/{name}", radius=0.01, color=0xff0000)
+#     add_sphere(viewer, f"world/{name}", radius=0.01, color=0xff0000)
 
 
 # Background/grid
@@ -345,10 +347,10 @@ for i in range(len(q_ref)):
 
     safe_place(viewer,"COP_right",  cop1[i])
     safe_place(viewer, "COP_left", cop2[i])
-    frame = mks_dict[i]
-    for name in mks_names:
-        pos= frame[name].reshape(3,)
-        place(viewer, name, pos)
+    # frame = mks_dict[i]
+    # for name in mks_names:
+    #     pos= frame[name].reshape(3,)
+    #     place(viewer, name, pos)
 
 
     viz_human.display(q_ref[i])

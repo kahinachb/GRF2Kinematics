@@ -222,6 +222,33 @@ def get_foot_pose(mks_positions,side):
     pose[:3,:3] = orthogonalize_matrix(pose[:3,:3])
     return pose
 
+def get_foot_pose_hum(mks_positions,side):
+    pose = np.eye(4,4)
+    X, Y, Z, ankle_center = [], [], [], []
+    if side == 'right' : 
+        suffix = 'R'
+    else :
+        suffix = 'L'
+
+    ankle_center = (mks_positions[f'{suffix}ANK'] + mks_positions[f'{suffix}MANK']).reshape(3,1)/2.0
+    toe_pos = (mks_positions[f'{suffix}5MHD']+mks_positions[f'{suffix}TOE'])/2.0
+    X = (toe_pos- mks_positions[f'{suffix}HEE']).reshape(3,1)
+    X = X/np.linalg.norm(X)
+    if suffix =='R':
+        Z = (mks_positions[f'{suffix}ANK'] - mks_positions[f'{suffix}MANK']).reshape(3,1)
+    else: 
+        Z = (mks_positions[f'{suffix}MANK'] - mks_positions[f'{suffix}ANK']).reshape(3,1)
+    Z = Z/np.linalg.norm(Z)
+    Y = np.cross(Z, X, axis=0)
+    Z = np.cross(X, Y, axis=0)
+
+    pose[:3,0] = X.reshape(3,)
+    pose[:3,1] = Y.reshape(3,)
+    pose[:3,2] = Z.reshape(3,)
+    pose[:3,3] = ankle_center.reshape(3,)
+    pose[:3,:3] = orthogonalize_matrix(pose[:3,:3])
+    return pose
+
 def get_thighR_pose(mks_positions, knee_offset,gender='male',):
     """
     Calculate the pose of the right thigh based on motion capture marker positions.

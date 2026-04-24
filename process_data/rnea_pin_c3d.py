@@ -123,8 +123,11 @@ def process_subject_task(subject, task):
     # --- RNEA + PF ---
     rnea_forces_world  = np.zeros((n_samples, 3))
     rnea_moments_world = np.zeros((n_samples, 3))
+    rnea_cop_clean = np.zeros((n_samples, 3))
+
     pf_forces_clean    = np.zeros((n_samples, 3))
     pf_moments_clean   = np.zeros((n_samples, 3))
+    pf_cop_clean = np.zeros((n_samples, 3))
 
     pf1_forces_clean  = np.zeros((n_samples, 3))
     pf1_moments_clean = np.zeros((n_samples, 3))
@@ -146,6 +149,16 @@ def process_subject_task(subject, task):
         rnea_forces_world[i]  = rot_base @ tau[0:3]
         rnea_moments_world[i] = (rot_base @ tau[3:6]) + \
                                  np.cross(pos_bassin, rnea_forces_world[i])
+        
+        F = rnea_forces_world[i]
+        M = rnea_moments_world[i]
+        Fz = F[2]
+    
+        rnea_cop_clean[i] = np.array([
+            -M[1] / Fz,
+             M[0] / Fz,
+             0.0
+        ])
 
         F1 = grf_df.loc[i, [fx1,fy1,fz1]].values
         M1 = grf_df.loc[i, [mx1,my1,mz1]].values / 1000.0
@@ -214,6 +227,8 @@ def process_subject_task(subject, task):
                                         pf2_moments_clean[i, 0] / pf2_forces_clean[i, 2], 
                                         0.0])
         
+        pf_cop_clean[i] = (pf1_forces_clean[i, 2] * pf1_cop_clean[i] + pf2_forces_clean[i, 2] * pf2_cop_clean[i]) / (pf1_forces_clean[i, 2] + pf2_forces_clean[i, 2])
+
     rnea_forces_pelvis  = np.zeros((n_samples, 3))
     rnea_moments_pelvis = np.zeros((n_samples, 3))
     pf_forces_pelvis    = np.zeros((n_samples, 3))
@@ -261,34 +276,34 @@ def process_subject_task(subject, task):
 
     print("Original shape :", q_ref.shape)
 
-    for i in range(n_samples-1):
-        R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
-        p_t = q_ref[i, 0:3]
+    # for i in range(n_samples-1):
+    #     R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
+    #     p_t = q_ref[i, 0:3]
         
-        # --- Frame suivante (t+1) ---
-        R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
-        p_next = q_ref[i+1, 0:3]
+    #     # --- Frame suivante (t+1) ---
+    #     R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
+    #     p_next = q_ref[i+1, 0:3]
         
-        # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
-        # On projette le déplacement global dans le repère de la frame actuelle
-        delta_pos_local[i] = R_t.T @ (p_next - p_t)
+    #     # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
+    #     # On projette le déplacement global dans le repère de la frame actuelle
+    #     delta_pos_local[i] = R_t.T @ (p_next - p_t)
         
-        # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
-        # On calcule la rotation relative : R_rel = R_t^T * R_next
-        R_rel = R_t.T @ R_next
-        # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
-        delta_rot_local[i] = pin.log3(R_rel)
+    #     # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
+    #     # On calcule la rotation relative : R_rel = R_t^T * R_next
+    #     R_rel = R_t.T @ R_next
+    #     # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
+    #     delta_rot_local[i] = pin.log3(R_rel)
 
-    q_ref = q_ref[1:, 7:]
+    q_ref = q_ref[:, :]
 
     
 
     # reconstruire nouveau q_ref
-    q_ref = np.concatenate([
-        delta_pos_local,
-        delta_rot_local,
-        q_ref
-    ], axis=1)
+    # q_ref = np.concatenate([
+    #     delta_pos_local,
+    #     delta_rot_local,
+    #     q_ref
+    # ], axis=1)
 
     
     print("New shape      :", q_ref.shape)
@@ -318,6 +333,15 @@ def process_subject_task(subject, task):
 
     time = np.linspace(0, n_samples * dt, n_samples)
     time = time[:cut]
+
+    fig, axs = plt.subplots(3, 1, figsize=(8, 10))
+    labels = ["X", "Y", "Z"]
+
+    for i in range(3):
+        axs[i].plot(pf_cop_clean[:, i], label="FP")
+        axs[i].plot(rnea_cop_clean[:, i], label="RNEA")
+        axs[i].set_title(f"COP {labels[i]}")
+        axs[i].legend()
 
     # =====================================================================
     # plots
@@ -375,7 +399,7 @@ def process_subject_task(subject, task):
     last_6 = q_ref_raw[:, -6:]
     dof_raw = np.concatenate((dof_raw,last_6),axis=1)
 
-    dof_filt    = np.degrees(q_ref[:,    6:6+6])
+    dof_filt    = np.degrees(q_ref[:,    7:7+6])
     last_6_filt = q_ref[:, -6:]
     dof_filt = np.concatenate((dof_filt,last_6_filt),axis=1)
 
@@ -388,8 +412,8 @@ def process_subject_task(subject, task):
                                figsize=(18, 4*n_rows_fig), sharex=True)
     axs2 = axs2.flatten()
 
-    time_q = time[1:]
-    dof_raw = dof_raw[1:cut]
+    time_q = time[:]
+    dof_raw = dof_raw[:cut]
     dof_filt = dof_filt[:cut]
     # print(dof_raw.shape)
     # print(dof_filt.shape)
@@ -466,25 +490,25 @@ def process_subject_task(subject, task):
         'COPz2':pf2_cop_pelvis[1:cut,2],
     })
 
-    kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
-    kinetics_filtered_df.to_csv(kinetics_file, index=False)
-    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
+    # kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
+    # kinetics_filtered_df.to_csv(kinetics_file, index=False)
+    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
 
-    kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered.csv")
-    kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
-    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
+    # kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered.csv")
+    # kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
+    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
 
-    # --- Sauvegarde joints filtrés ---
-    new_joint_names = [
-    "delta_x",
-    "delta_y",
-    "delta_z",
-    "delta_rx",
-    "delta_ry",
-    "delta_rz"
-    ] + joint_names[7:]
-    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=new_joint_names)
-    joints_file = os.path.join(save_dir, "joints_filtered.csv")
+    # # --- Sauvegarde joints filtrés ---
+    # new_joint_names = [
+    # "delta_x",
+    # "delta_y",
+    # "delta_z",
+    # "delta_rx",
+    # "delta_ry",
+    # "delta_rz"
+    # ] + joint_names[7:]
+    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
+    joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
     joints_filtered_df.to_csv(joints_file, index=False)
     print(f"  Saved filtered joints: {joints_file}")
 

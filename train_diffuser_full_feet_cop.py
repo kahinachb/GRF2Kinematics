@@ -1,3 +1,4 @@
+#i changed from classical transformer to PE_sinT_cross model
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -75,21 +76,82 @@ def compute_and_save_stats(file_list, save_path):
 # ==========================================
 # 2. ARCHITECTURE
 # ==========================================
-class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=29, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+import math
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
         super().__init__()
-        self.joint_embed = nn.Linear(joint_dim, embed_dim) #input embeddings
+        pe = torch.zeros(1, max_len, d_model)
+        position = torch.arange(max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
+
+# ---> ADDED: Sinusoidal Timestep Embedding Class <---
+class SinusoidalTimeEmbeddings(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        # time: 1D tensor of shape (batch_size,)
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
+class DiffusionTransformer(nn.Module):
+    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
-        self.time_embed = nn.Sequential(nn.Linear(1, embed_dim), nn.SiLU(), nn.Linear(embed_dim, embed_dim)) #time embedding, Encodes the diffusion timestep 
-        layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
-        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers)
+        
+        self.time_mlp = nn.Sequential(
+            SinusoidalTimeEmbeddings(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        ) 
+        
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
+        
+        # ---> CHANGED: Encoder to Decoder for Cross-Attention <---
+        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
+        
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
-        t_emb = self.time_embed(t.view(-1, 1)).unsqueeze(1)
-        x_emb = self.joint_embed(x) + self.force_embed(cond) + t_emb #All information is blended into the same 256-dimensional space
-        return self.output_layer(self.transformer(x_emb))
-    
+        # 1. Safeguard: Ensure t is a 1D tensor (handles inference loop integers)
+        if isinstance(t, (int, float)):
+            t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
+        elif t.dim() == 0:
+            t = t.unsqueeze(0).expand(x.shape[0])
+
+        # 2. Process Time Embedding
+        t_emb = self.time_mlp(t).unsqueeze(1) 
+        
+        # 3. Process Target Sequence (Noisy Joints + Time + Position)
+        x_emb = self.joint_embed(x) + t_emb 
+        x_emb = self.pos_encoder(x_emb) 
+        
+        # 4. Process Memory Sequence (Forces + Position)
+        # Note: Time-series forces also need positional awareness!
+        cond_emb = self.force_embed(cond)
+        cond_emb = self.pos_encoder(cond_emb)
+        
+        # 5. Transformer Decoder (tgt=Joints, memory=Forces)
+        out = self.transformer(tgt=x_emb, memory=cond_emb)
+        
+        return self.output_layer(out)
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
@@ -135,7 +197,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_full")
+    results_dir = Path("results_transfo_full")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
