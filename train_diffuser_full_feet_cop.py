@@ -276,7 +276,7 @@ def run_experiment():
             
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
-            pred_noise = model(j_noisy, t.float() / ddpm.n_steps, f)
+            pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
@@ -291,7 +291,7 @@ def run_experiment():
                 t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
                 noise = torch.randn_like(j)
                 j_noisy = ddpm.sample_forward(j, t, noise)
-                v_loss += nn.MSELoss()(model(j_noisy, t.float() / ddpm.n_steps, f), noise).item()
+                v_loss += nn.MSELoss()(model(j_noisy, t, f), noise).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
