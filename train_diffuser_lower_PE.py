@@ -220,18 +220,18 @@ def run_experiment():
     print("=" * 40)
 
 
-    def get_pairs(trials):
-        pairs = []
-        
-        for t in trials:
-            if t.is_dir():
-                f = t / "kinetics.npy"
-                j = t / "all_joints.npy"
-
-                if f.exists() and j.exists():
-                    pairs.append((f, j))
-
-        return pairs
+    def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "kinetics_feet.npy"  # On cible uniquement le 100Hz
+                    j = t / "all_joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 
     train_pairs = get_pairs(train_trials)
