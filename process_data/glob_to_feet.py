@@ -86,7 +86,7 @@ for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
         continue
 
     subject = trial_dir.parent.name
-    # subject_base = subject.rstrip('0123456789')
+    # subject_base = subject.rstrip('0123456789') #Hum dataset
     urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
     model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
     data_h = model_h.createData()
@@ -136,25 +136,27 @@ for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
     for i in range(n_samples):
         q_curr = q_ref[i, :]
         
-        # 1. Mise à jour Cinématique et Dynamique (RNEA)
+        # kinematics and dynamics
         tau = pin.rnea(model_h, data_h, q_curr, v_ref[i, :], a_ref[i, :])
         pin.forwardKinematics(model_h, data_h, q_curr)
         pin.updateFramePlacements(model_h, data_h)
 
-        # 2. Calcul du COP RNEA (Global)
+        # get cop rnea
         pos_bassin = q_curr[0:3]
         quat_p = pin.Quaternion(q_curr[6], q_curr[3], q_curr[4], q_curr[5])
         R_p = quat_p.toRotationMatrix()
         
-        # Wrench au bassin via RNEA
+        # rnea force in global frame
         f_world_rnea = data_h.oMi[1].act(data_h.f[1]) 
         F_rnea = f_world_rnea.linear
         # Moment au centre monde (0,0,0) induit par RNEA
+        # M_rnea_ = f_world_rnea.angular
         M_rnea = (R_p @ tau[3:6]) + np.cross(pos_bassin, F_rnea)
+       
         
         cop_rnea = np.array([-M_rnea[1]/F_rnea[2], M_rnea[0]/F_rnea[2], 0.0])
 
-        # 3. Extraction et calcul COP Global Plateformes
+        # Extraction et calcul COP Global Plateformes
         F_wL = np.array([df_cop[f"Fx{plate_L}_glob"][i], df_cop[f"Fy{plate_L}_glob"][i], df_cop[f"Fz{plate_L}_glob"][i]])
         F_wR = np.array([df_cop[f"Fx{plate_R}_glob"][i], df_cop[f"Fy{plate_R}_glob"][i], df_cop[f"Fz{plate_R}_glob"][i]])
 
@@ -171,7 +173,7 @@ for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
         else:
             cop_global = np.array([0,0,0])
 
-        # 4. Transformation Repère Pieds
+        # Transformation Repère Pieds
         mks_pos = {n: data_h.oMf[model_h.getFrameId(n)].translation for n in needed_markers}
 
         # for f in model_h.frames:

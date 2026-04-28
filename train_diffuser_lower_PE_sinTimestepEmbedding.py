@@ -191,21 +191,30 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/Vinc")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet")
 
-    results_dir = Path("results_PE_sinT_Vinc")
+    results_dir = Path("results_PE_sinT_real")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
  
 
-    train_trials, val_trials, test_trials = split_subjects(subjects, train_ratio=0.7, val_ratio=0.15)
+    # train_trials, val_trials, test_trials = split_subjects(subjects, train_ratio=0.7, val_ratio=0.15)
 
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
+
+    train_subs = task_subs[:11] + squat_subs[:4]
+    val_subs = task_subs[11:14] + squat_subs[4:5]
+    test_subs = task_subs[14:] + squat_subs[5:]
+
+# 
     print(f"\n[SPLIT SUMMARY]")
     print(f"TOTAL subjects: {len(subjects)}")
-    print(f"TRAIN ({len(train_trials)}): {[s.name for s in train_trials]}")
-    print(f"VAL   ({len(val_trials)}): {[s.name for s in val_trials]}")
-    print(f"TEST  ({len(test_trials)}): {[s.name for s in test_trials]}")
+    print(f"TRAIN ({len(train_subs)}): {[s.name for s in train_subs]}")
+    print(f"VAL   ({len(val_subs)}): {[s.name for s in val_subs]}")
+    print(f"TEST  ({len(test_subs)}): {[s.name for s in test_subs]}")
     print("=" * 40)
 
 
@@ -215,7 +224,7 @@ def run_experiment():
             # On parcourt chaque essai (task) dans le dossier du sujet
             for t in s.iterdir():
                 if t.is_dir():
-                    f = t / "kinetics_feet.npy"  # On cible uniquement le 100Hz
+                    f = t / "kinetics_feet.npy"  
                     j = t / "all_joints.npy"
                     # On vérifie que les deux fichiers existent bien
                     if f.exists() and j.exists():
@@ -223,12 +232,12 @@ def run_experiment():
         return p
 
 
-    train_pairs = get_pairs(train_trials)
+    train_pairs = get_pairs(train_subs)
     print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_trials), stats=stats), batch_size=64)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
@@ -236,7 +245,7 @@ def run_experiment():
     optimizer = optim.AdamW(model.parameters(), lr=2e-4)
     train_losses, val_losses = [], []
 
-    epochs = 500
+    epochs = 1
     print(f"\n[START] Entraînement DDPM...")
     for epoch in range(epochs):
         model.train()
@@ -273,7 +282,7 @@ def run_experiment():
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
-    test_ds = BiomechDiffusionDataset(get_pairs(test_trials), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -293,7 +302,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_trials)
+    test_pairs = get_pairs(test_subs)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)

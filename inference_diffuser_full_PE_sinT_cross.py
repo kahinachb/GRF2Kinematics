@@ -12,7 +12,7 @@ import torch.nn as nn
 # ==========================================
 
 def predict_full_trial(model, ddpm, f_path, j_path, stats, device, 
-                       window_size=128, stride=64, inference_steps=50):
+                       window_size=128, stride=64, inference_steps=50,n_samples=10):
     """
     Generate predictions for a full trial using sliding windows.
     
@@ -37,47 +37,46 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
 
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, :]
  
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
     T = f_norm.shape[0]
-    full_pred = torch.zeros((T, 12)).to(device)
-    count_map = torch.zeros((T, 12)).to(device)
+    full_pred = torch.zeros((T, 35)).to(device)
+    count_map = torch.zeros((T, 35)).to(device)
 
     print(f"  [INFO] Predicting trial with {T} frames...")
     print(f"  [INFO] Using window_size={window_size}, stride={stride}")
     
     num_windows = 0
-    for start in range(0, T - window_size, stride):
-        end = start + window_size
-        f_win = f_norm[start:end].unsqueeze(0).to(device)
-        
-        # Start from pure noise
-        curr_j = torch.randn((1, window_size, 12)).to(device)
-        
-        # Reverse diffusion
-        step_size = ddpm.n_steps // inference_steps
-        
-        for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
-            with torch.no_grad():
-                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
-        
-        # Accumulate predictions
-        full_pred[start:end] += curr_j.squeeze(0)
-        count_map[start:end] += 1.0
-        num_windows += 1
+    all_preds = []
+
+    for s in range(n_samples):
+        full_pred = torch.zeros((T, 35)).to(device)
+        count_map = torch.zeros((T, 35)).to(device)
+
+        for start in range(0, T - window_size, stride):
+            end = start + window_size
+            f_win = f_norm[start:end].unsqueeze(0).to(device)
+
+            curr_j = torch.randn((1, window_size, 35)).to(device)  # 🔥 différent à chaque sample
+
+            step_size = ddpm.n_steps // inference_steps
+
+            for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
+                with torch.no_grad():
+                    curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+
+            full_pred[start:end] += curr_j.squeeze(0)
+            count_map[start:end] += 1.0
+
+        final_pred = full_pred / torch.clamp(count_map, min=1.0)
+        final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
+
+        all_preds.append(final_pred.numpy())
     
-    print(f"  [INFO] Processed {num_windows} windows")
-    
-    # Average overlapping predictions
-    final_pred = full_pred / torch.clamp(count_map, min=1.0)
-    
-    # Denormalize
-    final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
-    
-    return j_raw, final_pred.numpy()
+    return j_raw, np.stack(all_preds)
 
 # ==========================================
 # 2. ARCHITECTURE
@@ -114,7 +113,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=35, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -208,8 +207,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics.npy"
-    j_path = data_path / "all_joints.npy"
+    f_path = data_path / "kinetics_deltaf.npy"
+    j_path = data_path / "all_joints_deltaf.npy"
     
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -221,65 +220,95 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 5. RUN INFERENCE =====
     print("\n[5/5] Running inference...")
-    j_ref, j_pred = predict_full_trial(
+    j_ref, j_preds = predict_full_trial(
         model, ddpm, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=1000
+        window_size=128, stride=64, inference_steps=1000,
+        n_samples=10   
     )
-    
-    # ===== 6. SAVE RESULTS =====
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    
-    # Save predictions
-    save_name = f"{subject_name}_{trial_name}_prediction.npy"
-    np.save(output_path / save_name, j_pred)
-    print(f"\n  ✓ Saved predictions to: {output_path / save_name}")
+
+    # ===== BEST SAMPLE SELECTION =====
+    print("\n[6/7] Selecting best sample...")
+
+    mse_samples = []
+    rmse_samples = []
+
+    for s in range(j_preds.shape[0]):
+        mse_s = np.mean((j_ref - j_preds[s])**2)
+        rmse_s = np.sqrt(mse_s)
+        mse_samples.append(mse_s)
+        rmse_samples.append(rmse_s)
+
+    best_idx = np.argmin(mse_samples)
+
+    j_pred_best = j_preds[best_idx]
+
+    print(f"Best sample: {best_idx}")
+    print(f"Best MSE: {mse_samples[best_idx]:.6f}")
+    print(f"Best RMSE: {rmse_samples[best_idx]:.6f}")
+        
     
     # ===== 7. VISUALIZE =====
-    print("\n[6/6] Creating visualization...")
-    fig, axes = plt.subplots(4, 3, figsize=(18, 14))
-    
-    for i, ax in enumerate(axes.flatten()):
-        ax.plot(j_ref[:, i], 'k--', alpha=0.6, linewidth=1.5, label='Ground Truth')
-        ax.plot(j_pred[:, i], 'r', linewidth=1.5, label='Prediction')
-        ax.set_title(f"Joint {i+1}", fontsize=12, fontweight='bold')
-        ax.set_xlabel("Frame")
-        ax.set_ylabel("Angle")
-        ax.grid(True, alpha=0.3)
-        if i == 0:
-            ax.legend(loc='upper right')
-    
-    plt.suptitle(f"Inference: {subject_name} / {trial_name}", 
-                 fontsize=16, fontweight='bold')
+    fig, axes = plt.subplots(7, 1, figsize=(14, 18))
+
+    for i in range(0, 6):
+        ax = axes[i]
+        
+        ax.plot(j_ref[:, i], 'k--', label='GT', alpha=0.6)
+
+        for s in range(j_preds.shape[0]):
+            ax.plot(j_preds[s, :, i], alpha=0.2)
+
+        ax.plot(j_pred_best[:, i], 'r', linewidth=2, label='Best')
+
+        ax.set_title(f"Joint {i}")
+        ax.grid(True)
+
+    axes[0].legend()
+    plt.suptitle("Freeflyer joints (0–5)")
     plt.tight_layout()
-    
-    plot_name = f"{subject_name}_{trial_name}_comparison.png"
-    plt.savefig(output_path / plot_name, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"  ✓ Saved plot to: {output_path / plot_name}")
-    
-    # ===== 8. COMPUTE METRICS =====
-    print("\n" + "="*60)
-    print("RESULTS SUMMARY")
-    print("="*60)
-    
-    mse = np.mean((j_ref - j_pred)**2)
-    mae = np.mean(np.abs(j_ref - j_pred))
-    rmse = np.sqrt(mse)
-    
-    print(f"MSE:  {mse:.6f}")
-    print(f"MAE:  {mae:.6f}")
-    print(f"RMSE: {rmse:.6f}")
-    
-    # Per-joint errors
-    print("\nPer-joint RMSE:")
-    for i in range(12):
-        joint_rmse = np.sqrt(np.mean((j_ref[:, i] - j_pred[:, i])**2))
-        print(f"  Joint {i+1:2d}: {joint_rmse:.6f}")
-    
-    print("\n" + "="*60)
-    print("INFERENCE COMPLETE!")
-    print("="*60 + "\n")
+    # plt.savefig(output_dir / "freeflyer_joints.png")
+    # plt.close()
+
+    fig, axes = plt.subplots(12, 1, figsize=(14, 20))
+
+    for idx, i in enumerate(range(6, 18)):
+        ax = axes[idx]
+
+        ax.plot(j_ref[:, i], 'k--', alpha=0.6)
+
+        for s in range(j_preds.shape[0]):
+            ax.plot(j_preds[s, :, i], alpha=0.15)
+
+        ax.plot(j_pred_best[:, i], 'r', linewidth=2)
+
+        ax.set_title(f"Joint {i}")
+        ax.grid(True)
+
+    plt.suptitle("Lower body joints (6–17)")
+    plt.tight_layout()
+    # plt.savefig(output_dir / "lower_body_joints.png")
+    # plt.close()
+
+    fig, axes = plt.subplots(17, 1, figsize=(14, 22))
+
+    for idx, i in enumerate(range(18, 35)):
+        ax = axes[idx]
+
+        ax.plot(j_ref[:, i], 'k--', alpha=0.6)
+
+        for s in range(j_preds.shape[0]):
+            ax.plot(j_preds[s, :, i], alpha=0.15)
+
+        ax.plot(j_pred_best[:, i], 'r', linewidth=2)
+
+        ax.set_title(f"Joint {i}")
+        ax.grid(True)
+
+    plt.suptitle("Upper body joints (18–34)")
+    plt.tight_layout()
+    # plt.savefig(output_dir / "upper_body_joints.png")
+    # plt.close()
+    plt.show()
 
 
 # ==========================================
@@ -289,18 +318,15 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "s1"     
-    # TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
-
-    SUBJECT_NAME = "Jeremy"     
-    TRIAL_NAME = "Trial111"           
+    SUBJECT_NAME = "s1_deltaf"     
+    TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
+      
           
     
-    MODEL_PATH = "./training_res/results_PE_sin_cross_aug/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./training_res/results_PE_sin_cross_aug/scalers_concat.json"
-    DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
-    # DATA_ROOT = "./DATA/synth_data/"
-    OUTPUT_DIR = "./inference_results_PE_sin_cross_aug"
+    MODEL_PATH = "./training_res/results_transfo_full_ff/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./training_res/results_transfo_full_ff/scalers_concat.json"
+    DATA_ROOT = "./DATA/synth_npy"
+    OUTPUT_DIR = "./inference_results_transfo_full_ff"
     
     # ===== RUN INFERENCE =====
     run_inference(

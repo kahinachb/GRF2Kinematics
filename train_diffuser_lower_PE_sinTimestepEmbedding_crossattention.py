@@ -17,7 +17,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:19]
+            j_data = j_data[:, 6:18]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -39,7 +39,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:19]
+    j_cat= j_cat[:, 6:18]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -137,7 +137,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 6:18]
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -173,56 +173,67 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet")
 
-    results_dir = Path("results_PE_sin_cross_fixed")
+    results_dir = Path("results_PE_sin_cross_real")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    if len(subjects) > 1:
-        print("⚠️ Tu as plus d'un sujet")
-        print (subjects)
-        subject = subjects[0]
-        print(subject)
+    # subjects = [d for d in data_root.iterdir() if d.is_dir()]
+    # if len(subjects) > 1:
+    #     print("⚠️ Tu as plus d'un sujet")
+    #     print (subjects)
+    #     subject = subjects[0]
+    #     print(subject)
 
-    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
+    # trials = sorted([t for t in subject.iterdir() if t.is_dir()])
+    # print(f"Total trials: {len(trials)}")
+    # random.seed(42)
+    # random.shuffle(trials)
+    # n = len(trials)
+    # train_trials = trials[:int(0.7*n)]
+    # val_trials   = trials[int(0.7*n):int(0.85*n)]
+    # test_trials  = trials[int(0.85*n):]
 
-    print(f"Total trials: {len(trials)}")
+    # print(f"\n[SPLIT SUMMARY]")
+    # print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
+    # print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
+    # print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
 
-    random.seed(42)
-    random.shuffle(trials)
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
 
-    n = len(trials)
-    train_trials = trials[:int(0.7*n)]
-    val_trials   = trials[int(0.7*n):int(0.85*n)]
-    test_trials  = trials[int(0.85*n):]
+    train_subs = task_subs[:11] + squat_subs[:4]
+    val_subs = task_subs[11:14] + squat_subs[4:5]
+    test_subs = task_subs[14:] + squat_subs[5:]
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
-    print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
-    print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
+    print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")
+    print(f"VAL   ({len(val_subs)} sujets): {[s.name for s in val_subs]}")
+    print(f"TEST  ({len(test_subs)} sujets): {[s.name for s in test_subs]}")
+    print(f"{'='*30}")
+
+    def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "kinetics_feet.npy"  
+                    j = t / "all_joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 
-    def get_pairs(trials):
-        pairs = []
-        
-        for t in trials:
-            if t.is_dir():
-                f = t / "kinetics.npy"
-                j = t / "all_joints.npy"
-
-                if f.exists() and j.exists():
-                    pairs.append((f, j))
-
-        return pairs
-
-
-    train_pairs = get_pairs(train_trials)
+    train_pairs = get_pairs(train_subs)
     print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_trials), stats=stats), batch_size=64)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
@@ -270,7 +281,7 @@ def run_experiment():
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
-    test_ds = BiomechDiffusionDataset(get_pairs(test_trials), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -290,7 +301,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_trials)
+    test_pairs = get_pairs(test_subs)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)

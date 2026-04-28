@@ -86,9 +86,6 @@ class DDPM:
 
         beta_tilde = beta_t * (1 - alpha_bar_prev) / (1 - alpha_bar)
 
-
-        # t_norm     = torch.full((x_t.shape[0],), t / self.n_steps,
-        #                         device=self.device, dtype=torch.float32)
         
         t_tensor   = torch.full((x_t.shape[0],), t,
                                 device=self.device, dtype=torch.float32)

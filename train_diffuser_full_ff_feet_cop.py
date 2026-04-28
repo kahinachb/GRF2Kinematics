@@ -314,8 +314,8 @@ def run_experiment():
     ref = (j_ref * stats['j_s']) + stats['j_m']
 
     plot_joints(ref, pred, 0, 6, results_dir/"inf_fig1.png")
-    plot_joints(ref, pred, 6, 12, results_dir/"inf_fig2.png")
-    plot_joints(ref, pred, 12, 35, results_dir/"inf_fig3.png")
+    plot_joints(ref, pred, 6, 18, results_dir/"inf_fig2.png")
+    plot_joints(ref, pred, 18, 35, results_dir/"inf_fig3.png")
     
 
     # --- INFERENCE COMPLÈTE ---
@@ -326,8 +326,8 @@ def run_experiment():
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
 
     plot_joints(ref_full, pred_full, 0, 6, results_dir/"fig1.png")
-    plot_joints(ref_full, pred_full, 6, 12, results_dir/"fig2.png")
-    plot_joints(ref_full, pred_full, 12, 35, results_dir/"fig3.png")
+    plot_joints(ref_full, pred_full, 6, 18, results_dir/"fig2.png")
+    plot_joints(ref_full, pred_full, 18, 35, results_dir/"fig3.png")
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
     plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()

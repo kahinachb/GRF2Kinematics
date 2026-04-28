@@ -27,7 +27,7 @@ dt = 1.0 / fps
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_feet_cop/Jeremy_Trial111_prediction.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_aug/Jeremy_Trial111_prediction.csv"
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_aug/Jeremy_Trial111.csv"
 # path_joint_pred="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_aug/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv"
 q_ref_df_pred = pd.read_csv(path_joint_pred).iloc[:,:19]
@@ -190,7 +190,7 @@ for i in range(len(q_ref)):
     images.append(viewer.get_image())
 
     
-video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/real.mp4"
+video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/real_cross_fixed.mp4"
 imageio.mimsave(video_path, images, fps=fps, codec='libx264')
 print(f"[MeshCat] Video saved to: {video_path}")
 
