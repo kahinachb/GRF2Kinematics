@@ -109,7 +109,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=29, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=29, force_dim=18, embed_dim=512, nhead=8, num_layers=6):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -197,7 +197,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
 
-    results_dir = Path("results_transfo_full")
+    results_dir = Path("results_transfo_full_newH")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
@@ -224,14 +224,6 @@ def run_experiment():
     print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
     print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
 
-    # def get_pairs(subs):
-    #     p = []
-    #     for s in subs:
-    #         for t in s.iterdir():
-    #             f = t/"forces_300.npy" if (t/"forces_300.npy").exists() else t/"forces.npy"
-    #             j = t/"joints.npy"
-    #             if f.exists() and j.exists(): p.append((f, j))
-    #     return p
 
     def get_pairs(trials):
         pairs = []
@@ -275,7 +267,6 @@ def run_experiment():
             j_noisy = ddpm.sample_forward(j, t, noise)
             
             optimizer.zero_grad()
-            # On normalise t pour le modèle (0 à 1)
             pred_noise = model(j_noisy, t, f)
             loss = nn.MSELoss()(pred_noise, noise)
             loss.backward()
