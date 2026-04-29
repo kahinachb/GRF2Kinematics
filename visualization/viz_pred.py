@@ -27,13 +27,23 @@ dt = 1.0 / fps
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_aug/Jeremy_Trial111_prediction.csv"
-path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_aug/Jeremy_Trial111.csv"
-# path_joint_pred="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_aug/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv"
-q_ref_df_pred = pd.read_csv(path_joint_pred).iloc[:,:19]
-# path_joint ="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_aug/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
-q_ref_df = pd.read_csv(path_joint).iloc[:,:19]
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_feet_real/Jeremy_Trial111_prediction.csv"
+path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv"
 
+q_ref_df_pred = pd.read_csv(path_joint_pred).iloc[:,:19]
+
+dofs = [
+    "FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
+    "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
+    "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
+    "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
+    "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
+]
+
+q_ref_df = pd.read_csv(path_joint, usecols=dofs).iloc[1:,:]
+
+print(q_ref_df_pred.shape)
+print(q_ref_df.shape)
 desired_order_ref = [
     "FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",

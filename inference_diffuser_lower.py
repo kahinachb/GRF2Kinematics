@@ -37,7 +37,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
 
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 6:18]
  
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -58,11 +58,11 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
         curr_j = torch.randn((1, window_size, 12)).to(device)
         
         # Reverse diffusion
-        step_size = ddpm.n_steps // inference_steps
+        step_size = ddpm.n_steps // inference_steps  #1000/1000 = 1
         
         for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
             with torch.no_grad():
-                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+                curr_j = ddpm.sample_reverse_norm(model, curr_j, t_idx, f_win)
         
         # Accumulate predictions
         full_pred[start:end] += curr_j.squeeze(0)
@@ -136,7 +136,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 3. INITIALIZE DDPM =====
     print("\n[3/5] Initializing DDPM...")
-    ddpm = DDPM(device, n_steps=2000)
+    ddpm = DDPM(device, n_steps=1000)
     print(f"  ✓ DDPM initialized with {ddpm.n_steps} steps")
     
     # ===== 4. LOCATE DATA FILES =====
@@ -144,7 +144,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics.npy"
+    f_path = data_path / "kinetics_feet.npy"
     j_path = data_path / "all_joints.npy"
     
     if not f_path.exists():
@@ -159,7 +159,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[5/5] Running inference...")
     j_ref, j_pred = predict_full_trial(
         model, ddpm, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=2000
+        window_size=128, stride=64, inference_steps=1000
     )
     
     # ===== 6. SAVE RESULTS =====
@@ -228,11 +228,10 @@ if __name__ == "__main__":
     SUBJECT_NAME = "Jeremy"     
     TRIAL_NAME = "Trial111"           
     
-    MODEL_PATH = "./results_feet_cop/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./results_feet_cop/scalers_concat.json"
-    # DATA_ROOT = "./processed_data_global"
-    DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
-    OUTPUT_DIR = "./inference_results_feet_cop"
+    MODEL_PATH = "./training_res/results_feet_real/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./training_res/results_feet_real/scalers_concat.json"
+    DATA_ROOT = "./processed_data_feet"
+    OUTPUT_DIR = "./inference_results_feet_real"
     
     # ===== RUN INFERENCE =====
     run_inference(

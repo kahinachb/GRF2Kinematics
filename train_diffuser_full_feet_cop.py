@@ -40,7 +40,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:]
+            j_data = j_data[:, 6:]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -62,7 +62,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:]
+    j_cat= j_cat[:, 6:]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -109,7 +109,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=29, force_dim=18, embed_dim=512, nhead=8, num_layers=6):
+    def __init__(self, joint_dim=29, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -195,56 +195,50 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
+    data_root = Path("/datasets/GRF2Kine/processed_data_feet")
 
-    results_dir = Path("results_transfo_full_newH")
+    results_dir = Path("results_full_real")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    if len(subjects) > 1:
-        print("⚠️ Tu as plus d'un sujet")
-        print (subjects)
-        subject = subjects[0]
-        print(subject)
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
 
-    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
+    # train_trials, val_trials, test_trials = split_subjects(subjects, train_ratio=0.7, val_ratio=0.15)
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
 
-    print(f"Total trials: {len(trials)}")
+    train_subs = task_subs[:11] + squat_subs[:4]
+    val_subs = task_subs[11:14] + squat_subs[4:5]
+    test_subs = task_subs[14:] + squat_subs[5:]
 
-    random.seed(42)
-    random.shuffle(trials)
-
-    n = len(trials)
-    train_trials = trials[:int(0.7*n)]
-    val_trials   = trials[int(0.7*n):int(0.85*n)]
-    test_trials  = trials[int(0.85*n):]
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_trials)} trials): {[t.name for t in train_trials]}")
-    print(f"VAL   ({len(val_trials)} trials): {[t.name for t in val_trials]}")
-    print(f"TEST  ({len(test_trials)} trials): {[t.name for t in test_trials]}")
+    print(f"TOTAL subjects: {len(subjects)}")
+    print(f"TRAIN ({len(train_subs)}): {[s.name for s in train_subs]}")
+    print(f"VAL   ({len(val_subs)}): {[s.name for s in val_subs]}")
+    print(f"TEST  ({len(test_subs)}): {[s.name for s in test_subs]}")
+    print("=" * 40)
+
+    def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "kinetics_feet.npy"  
+                    j = t / "all_joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 
-    def get_pairs(trials):
-        pairs = []
-        
-        for t in trials:
-            if t.is_dir():
-                f = t / "kinetics.npy"
-                j = t / "all_joints.npy"
-
-                if f.exists() and j.exists():
-                    pairs.append((f, j))
-
-        return pairs
-
-
-    train_pairs = get_pairs(train_trials)
+    train_pairs = get_pairs(train_subs)
     print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_trials), stats=stats), batch_size=64)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
@@ -255,6 +249,7 @@ def run_experiment():
 
     epochs = 1 
     print(f"\n[START] Entraînement DDPM...")
+    best_val_loss = float('inf')
     for epoch in range(epochs):
         model.train()
         t_loss = 0
@@ -288,11 +283,23 @@ def run_experiment():
         val_losses.append(v_loss/len(val_loader))
         print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
 
+    avg_train_loss = t_loss / len(train_loader)
+    avg_val_loss = v_loss / len(val_loader)
+    train_losses.append(avg_train_loss)
+    val_losses.append(avg_val_loss)
+
+    if avg_val_loss < best_val_loss:
+        print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
+        best_val_loss = avg_val_loss
+        
+        # Save the model state dict specifically as the "best" model
+        torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
+        
     torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
-    test_ds = BiomechDiffusionDataset(get_pairs(test_trials), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -334,7 +341,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_trials)
+    test_pairs = get_pairs(test_subs)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)

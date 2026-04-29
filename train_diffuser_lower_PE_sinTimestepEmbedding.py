@@ -247,6 +247,7 @@ def run_experiment():
 
     epochs = 1
     print(f"\n[START] Entraînement DDPM...")
+    best_val_loss = float('inf')
     for epoch in range(epochs):
         model.train()
         t_loss = 0
@@ -277,6 +278,18 @@ def run_experiment():
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
         print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
+    
+    avg_train_loss = t_loss / len(train_loader)
+    avg_val_loss = v_loss / len(val_loader)
+    train_losses.append(avg_train_loss)
+    val_losses.append(avg_val_loss)
+
+    if avg_val_loss < best_val_loss:
+        print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
+        best_val_loss = avg_val_loss
+        
+        # Save the model state dict specifically as the "best" model
+        torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
 
     torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
