@@ -173,7 +173,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_data")
+    data_root = Path("/datasets/GRF2Kine/synth_npy")
 
     results_dir = Path("results_PE_sin_cross_syn_selfs")
     results_dir.mkdir(parents=True, exist_ok=True)
