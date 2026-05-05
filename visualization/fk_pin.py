@@ -28,7 +28,7 @@ task = 'walk'
 # urdf_path = f'/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 
-path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered.csv"
+path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 ######################################################""

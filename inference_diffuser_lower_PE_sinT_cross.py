@@ -296,11 +296,11 @@ if __name__ == "__main__":
     TRIAL_NAME = "Trial111"           
           
     
-    MODEL_PATH = "./training_res/results_PE_sin_cross_aug/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./training_res/results_PE_sin_cross_aug/scalers_concat.json"
-    DATA_ROOT = "./DATA/npy/Vinc_npy_feet"
-    # DATA_ROOT = "./DATA/synth_data/"
-    OUTPUT_DIR = "./inference_results_PE_sin_cross_aug"
+    MODEL_PATH = "./training_res/results_PE_sin_cross_real/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./training_res/results_PE_sin_cross_real/scalers_concat.json"
+    DATA_ROOT = "./processed_data_feet"
+    # DATA_ROOT = "./DATA/synth_npy/"
+    OUTPUT_DIR = "./inference_results_PE_sin_cross_synth"
     
     # ===== RUN INFERENCE =====
     run_inference(

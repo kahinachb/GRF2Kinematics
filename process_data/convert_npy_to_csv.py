@@ -1,26 +1,26 @@
 import numpy as np
 import csv
 
-input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_global/Jeremy/Trial111/all_joints.npy"
-output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_feet_real/Jeremy_Trial111_ref.csv"
+input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.npy"
+output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv"
 
 data = np.load(input_npy)   # shape (N, 2)
 
 with open(output_csv, mode="w", newline="") as f:
     writer = csv.writer(f)
-    writer.writerow(["FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw", 
+    writer.writerow([#"FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw", 
         "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
     "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
     "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
     "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
-    "Lumbar_flex_ext", "Lumbar_lateral_flex",
-    "Lcalvicule_x",
-    "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
-    "Lelbow_flex_ext", "Lelbow_pron_supi",
-    "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
-    "rcalvicule_x",
-    "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
-    "Relbow_flex_ext", "Relbow_pron_supi"
+    # "Lumbar_flex_ext", "Lumbar_lateral_flex",
+    # "Lcalvicule_x",
+    # "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
+    # "Lelbow_flex_ext", "Lelbow_pron_supi",
+    # "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
+    # "rcalvicule_x",
+    # "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
+    # "Relbow_flex_ext", "Relbow_pron_supi"
     ])  # header
     writer.writerows(data)
 

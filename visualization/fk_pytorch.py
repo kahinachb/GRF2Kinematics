@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import pinocchio as pin
 import meshcat
-from utils.model_utils import build_human_model # Ta fonction locale
 from pytorch_kinematics.transforms import Transform3d
 import example_robot_data as robex
 from pinocchio.visualize import MeshcatVisualizer
@@ -22,7 +21,7 @@ task = 'walk'
 
 
 # --- CONFIGURATION ---
-path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered.csv"
+path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", 
                   "left_wrist_X", "left_wrist_Z", "right_wrist_X", "right_wrist_Z"]
 
@@ -177,6 +176,7 @@ base_transform = Transform3d(pos=pos_base, rot=quat_wxyz, device=device)
 with torch.no_grad():
     # 1. Calcul de la FK relative (repère local à la racine du robot)
     relative_transforms = chain.forward_kinematics(q_pk)
+    print(chain.get_link_names())
     
     # 2. Application du FreeFlyer pour chaque frame
     # On crée un nouveau dictionnaire pour stocker les positions mondiales

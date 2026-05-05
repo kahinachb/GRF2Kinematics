@@ -29,6 +29,42 @@ class DDPM:
         sqrt_1ab = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1)
         return sqrt_ab * x_0 + sqrt_1ab * noise
 
+    def sample_reverse_selfs(self, model, x_t, t, cond=None):
+        """
+        Takes a step backwards from x_t to x_{t-1} assuming the model predicts x_0 directly.
+        """
+        # 1. Ask the model to predict the clean data (x_0)
+        pred_x0 = model(x_t, t, cond)
+        
+        # If t is 0, we just return the predicted clean data!
+        if t == 0:
+            return pred_x0
+        
+        # 2. Grab the alpha/beta values for the current timestep
+        alpha_t = self.alphas[t]
+        alpha_bar_t = self.alphas_cumprod[t]
+        alpha_bar_t_prev = self.alphas_cumprod[t-1]
+        beta_t = self.betas[t]
+        
+        # 3. Calculate the posterior mean using the predicted x_0
+        # Formula: mu = (sqrt(alpha_bar_{t-1}) * beta_t / (1 - alpha_bar_t)) * x_0 
+        #             + (sqrt(alpha_t) * (1 - alpha_bar_{t-1}) / (1 - alpha_bar_t)) * x_t
+        
+        coef1 = (math.sqrt(alpha_bar_t_prev) * beta_t) / (1 - alpha_bar_t)
+        coef2 = (math.sqrt(alpha_t) * (1 - alpha_bar_t_prev)) / (1 - alpha_bar_t)
+        
+        posterior_mean = coef1 * pred_x0 + coef2 * x_t
+        
+        # 4. Add the variance/noise (Langevin dynamics)
+        # Posterior variance is roughly beta_t (or the exact formula below)
+        posterior_variance = beta_t * (1 - alpha_bar_t_prev) / (1 - alpha_bar_t)
+        noise = torch.randn_like(x_t)
+        
+        # Calculate x_{t-1}
+        x_t_prev = posterior_mean + math.sqrt(posterior_variance) * noise
+        
+        return x_t_prev
+    
     def sample_reverse_norm(self, model, x_t, t, cond):
         """One reverse step p(x_{t-1} | x_t, cond).
 

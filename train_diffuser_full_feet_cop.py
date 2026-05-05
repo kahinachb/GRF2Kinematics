@@ -159,7 +159,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:]
+    j_raw = j_raw[:, 6:]
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -246,6 +246,7 @@ def run_experiment():
     # model = DiffusionTransformerConcat().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     train_losses, val_losses = [], []
+    criterion = nn.MSELoss()
 
     epochs = 1 
     print(f"\n[START] Entraînement DDPM...")
@@ -263,9 +264,9 @@ def run_experiment():
             
             optimizer.zero_grad()
             pred_noise = model(j_noisy, t, f)
-            loss = nn.MSELoss()(pred_noise, noise)
+            loss = criterion(pred_noise, noise)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid exploding gradients) while using cross attention
             optimizer.step()
             t_loss += loss.item()
         
@@ -277,23 +278,21 @@ def run_experiment():
                 t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
                 noise = torch.randn_like(j)
                 j_noisy = ddpm.sample_forward(j, t, noise)
-                v_loss += nn.MSELoss()(model(j_noisy, t, f), noise).item()
+                v_loss += criterion(model(j_noisy, t, f), noise).item()
         
-        train_losses.append(t_loss/len(train_loader))
-        val_losses.append(v_loss/len(val_loader))
+ 
+        avg_train_loss = t_loss / len(train_loader)
+        avg_val_loss = v_loss / len(val_loader)
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
         print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
 
-    avg_train_loss = t_loss / len(train_loader)
-    avg_val_loss = v_loss / len(val_loader)
-    train_losses.append(avg_train_loss)
-    val_losses.append(avg_val_loss)
-
-    if avg_val_loss < best_val_loss:
-        print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
-        best_val_loss = avg_val_loss
-        
-        # Save the model state dict specifically as the "best" model
-        torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
+        if avg_val_loss < best_val_loss:
+            print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
+            best_val_loss = avg_val_loss
+            
+            # Save the model state dict specifically as the "best" model
+            torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
         
     torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
