@@ -52,7 +52,9 @@ def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, f
     r_sink = torch.nn.functional.relu(-(r_foot_pos[:, :, 2] - floor_offset)) ** 2
     l_sink = torch.nn.functional.relu(-(l_foot_pos[:, :, 2] - floor_offset)) ** 2
     loss_sink = r_sink.mean() + l_sink.mean()
-    
+
+    penetration = torch.relu(floor_offset - r_foot_pos[:, :, 2])
+
     # Skating Loss (Velocity in X and Y ONLY)
     # Notice the :2 slicing at the end to grab only X and Y coordinates!
     r_vel_xy = r_foot_pos[:, 1:, :2] - r_foot_pos[:, :-1, :2]
@@ -60,20 +62,21 @@ def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, f
     
     # ---> IMPORTANT: Update these indices to match Fz in your forces array! <---
     # Assuming forces shape is [batch, seq, 18]. 
-    FZ_RIGHT_IDX = 2 
-    FZ_LEFT_IDX = 11
+    FY_RIGHT_IDX = 1  #in feet frames y_feet ==> z_world
+    FY_LEFT_IDX = 10
     
     # Grab denormalized forces to check the 20N threshold
     f_s = stats['f_s'].to(device)
     f_m = stats['f_m'].to(device)
     forces_raw = (forces * f_s) + f_m
     
-    r_fz = forces_raw[:, :-1, FZ_RIGHT_IDX]
-    l_fz = forces_raw[:, :-1, FZ_LEFT_IDX]
+    r_fz = forces_raw[:, :-1, FY_RIGHT_IDX]
+    l_fz = forces_raw[:, :-1, FY_LEFT_IDX]
+
     
     r_contact = (r_fz > 5.0).float()
     l_contact = (l_fz > 5.0).float()
-    
+ 
     # Calculate skating loss using only the 2D velocity
     r_skate = (r_vel_xy ** 2).sum(dim=-1) * r_contact
     l_skate = (l_vel_xy ** 2).sum(dim=-1) * l_contact
@@ -545,7 +548,7 @@ if __name__ == "__main__":
 
     MODEL_PATH = "./training_res/results_PE_sin_cross_real_selfs/diffusion_biomech_model_best.pth"
     SCALERS_PATH = "./training_res/results_PE_sin_cross_real_selfs/scalers_concat.json"
-    DATA_ROOT = "/datasets/GRF2Kine/processed_data_feet"
+    DATA_ROOT = "processed_data_feet"
     OUTPUT_DIR = "./inference_results_PE_sin_cross_selfs_best_guided"
     
     # ===== RUN INFERENCE =====

@@ -157,7 +157,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         # Reverse Diffusion loop
         for t_idx in reversed(range(ddpm.n_steps)):
             with torch.no_grad():
-                # This now calls the NEW math that blends x_t and x_0
+                #  blends x_t and x_0
                 curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_win)
         
         # curr_j is now your final denoised joint sequence
