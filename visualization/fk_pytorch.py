@@ -14,10 +14,10 @@ from pytorch_kinematics.transforms import Transform3d
 import example_robot_data as robex
 from pinocchio.visualize import MeshcatVisualizer
 
-
-which = 'Anais'
-subject = 'subject01'
-task = 'walk'
+import re
+which = 'Vinc'
+subject = 'Jeremy'
+task = 'Trial111'
 
 
 # --- CONFIGURATION ---
@@ -70,7 +70,7 @@ q_ref_df = pd.read_csv(path_joint)
 q_ref_np = q_ref_df.to_numpy(dtype=float)
 
 # 2. CONSTRUCTION DE LA CHAÎNE PYTORCH-KINEMATICS
-human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
+human = robex.human.HumanLoader(height=1.55, weight=68.78, gender='male').robot
 model_h = human.model
 data_h = human.data
 coll_h = human.collision_model
@@ -97,16 +97,35 @@ data_h = pin.Data(model_h)
 # ###############################################################################################################
 
 
-urdf_path = human.urdf
-
+# urdf_path = human.urdf
+urdf_path=f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
 print(f"Loading URDF from: {urdf_path}")
 
-with open(urdf_path, 'r') as f:
+with open(urdf_path, 'r', encoding='utf-8') as f:
     urdf_data = f.read()
+
+# 1. On supprime la première ligne (la déclaration XML qui posait le 1er problème)
+urdf_data = re.sub(r'<\?xml[^>]+\?>', '', urdf_data)
+
+# 2. On supprime les balises <texture> mal formées (le 2ème problème)
+urdf_data = re.sub(r'<texture[^>]*>', '', urdf_data)
+
+# 3. On convertit la chaîne propre en bytes pour PyTorch Kinematics
+urdf_data_bytes = urdf_data.encode('utf-8')
 
 chain = pk.build_chain_from_urdf(urdf_data)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 chain = chain.to(device=device)
+
+pk_link_names = chain.get_link_names()
+
+# Afficher le nombre total
+print(f"Nombre de links dans PK : {len(pk_link_names)}")
+
+# Afficher la liste complète
+print("Noms des links PK :")
+for name in pk_link_names:
+    print(f"- {name}")
 
 # Récupérer l'ordre des joints attendu par PK
 pk_joint_names = chain.get_joint_parameter_names()
@@ -244,7 +263,7 @@ for i in range(n_samples): # On saute des frames pour la fluidité
 df_output = pd.DataFrame(data_list)
 
 # Définir le nom du fichier de sortie (par exemple dans le même dossier que le script)
-output_csv_path = f"pk_fk_results_{subject}_{task}.csv"
+output_csv_path = f"pk_fk_results_{subject}_{task}_urdf.csv"
 df_output.to_csv(output_csv_path, index=False)
 
 print(f"✅ Sauvegarde terminée : {output_csv_path}")

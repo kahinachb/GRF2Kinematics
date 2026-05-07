@@ -8,15 +8,15 @@ import torch.nn as nn
 import pandas as pd
 import pytorch_kinematics as pk
 import example_robot_data as robex
-
+import re
 # the EXACT link names from URDF that represent the feet
 RIGHT_FOOT_LINK = "right_foot" 
 LEFT_FOOT_LINK = "left_foot"   
 
 def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, ff_tensor, forces, stats, device):
     # 1. Denormalize joints
-    j_s = stats['j_s'][:12].to(device) # Only the 12 joint scalers
-    j_m = stats['j_m'][:12].to(device)
+    j_s = stats['j_s'][:].to(device) 
+    j_m = stats['j_m'][:].to(device)
     pred_joints_raw = (pred_joints_norm * j_s) + j_m
     
     batch_size, seq_len, _ = pred_joints_raw.shape
@@ -47,13 +47,16 @@ def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, f
     
     # 5. Penalties
     # Sinking Loss (Z < 0)
-    r_sink = torch.nn.functional.relu(-r_foot_pos[:, :, 2]) ** 2
-    l_sink = torch.nn.functional.relu(-l_foot_pos[:, :, 2]) ** 2
+
+    floor_offset = 0.08
+    r_sink = torch.nn.functional.relu(-(r_foot_pos[:, :, 2] - floor_offset)) ** 2
+    l_sink = torch.nn.functional.relu(-(l_foot_pos[:, :, 2] - floor_offset)) ** 2
     loss_sink = r_sink.mean() + l_sink.mean()
     
-    # Skating Loss (Velocity)
-    r_vel = r_foot_pos[:, 1:, :] - r_foot_pos[:, :-1, :]
-    l_vel = l_foot_pos[:, 1:, :] - l_foot_pos[:, :-1, :]
+    # Skating Loss (Velocity in X and Y ONLY)
+    # Notice the :2 slicing at the end to grab only X and Y coordinates!
+    r_vel_xy = r_foot_pos[:, 1:, :2] - r_foot_pos[:, :-1, :2]
+    l_vel_xy = l_foot_pos[:, 1:, :2] - l_foot_pos[:, :-1, :2]
     
     # ---> IMPORTANT: Update these indices to match Fz in your forces array! <---
     # Assuming forces shape is [batch, seq, 18]. 
@@ -68,11 +71,13 @@ def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, f
     r_fz = forces_raw[:, :-1, FZ_RIGHT_IDX]
     l_fz = forces_raw[:, :-1, FZ_LEFT_IDX]
     
-    r_contact = (r_fz > 20.0).float()
-    l_contact = (l_fz > 20.0).float()
+    r_contact = (r_fz > 5.0).float()
+    l_contact = (l_fz > 5.0).float()
     
-    r_skate = (r_vel ** 2).sum(dim=-1) * r_contact
-    l_skate = (l_vel ** 2).sum(dim=-1) * l_contact
+    # Calculate skating loss using only the 2D velocity
+    r_skate = (r_vel_xy ** 2).sum(dim=-1) * r_contact
+    l_skate = (l_vel_xy ** 2).sum(dim=-1) * l_contact
+
     loss_skate = r_skate.mean() + l_skate.mean()
     total_loss = loss_skate + loss_sink
     return total_loss, loss_skate, loss_sink
@@ -144,7 +149,7 @@ def compute_physics_energy(chain, n_pk, index_mapping, pred_joints_norm, ff_tens
     # ---> 2. SINKING PENALTY (Z < 0) <---
     # We still need this! If the foot is in the air (Fz < 20N), the anchor loss is disabled.
     # But we still don't want the airborne foot clipping through the floor!
-    floor_offset = 0.08 
+    floor_offset = 0.00 
     r_sink = torch.nn.functional.relu(-(r_foot_pos[:, :, 2] - floor_offset)) ** 2
     l_sink = torch.nn.functional.relu(-(l_foot_pos[:, :, 2] - floor_offset)) ** 2
     loss_sink = r_sink.mean() + l_sink.mean()
@@ -157,15 +162,15 @@ def compute_physics_energy(chain, n_pk, index_mapping, pred_joints_norm, ff_tens
 def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device, 
                        chain, n_pk, index_mapping,
                        window_size=128, stride=64, inference_steps=50,
-                       guidance_scale=10.0):       # ---> ADDED GUIDANCE SCALE
+                       guidance_scale=0.1):      
     model.eval()
     
     f_raw = np.load(f_path).astype(np.float32)
     j_full_raw = np.load(j_path).astype(np.float32) # Load all columns first
-    ff_raw = pd.read_csv(j_path_FF).iloc[:,:7].to_numpy() #get freeflyer from csv file
-    
+    ff_raw = pd.read_csv(j_path_FF,skiprows=1).iloc[:,:7].to_numpy() #get freeflyer from csv file
+    print(ff_raw.shape)
     # Extract  Joints (Cols 6 to 17)
-    j_raw = j_full_raw[:, 7:19]
+    j_raw = j_full_raw[:, 6:18]
  
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     ff_tensor_full = torch.from_numpy(ff_raw).float().to(device) # Send FF to GPU
@@ -182,54 +187,66 @@ def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device,
         curr_j = torch.randn((1, window_size, 12)).to(device)
         step_size = ddpm.n_steps // inference_steps
         
+        # for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
+            
+        #     # ---> PHYSICS GUIDANCE START <---
+        #     curr_j = curr_j.detach().requires_grad_(True)
+            
+        #     with torch.enable_grad():
+        #         # We calculate energy directly on the noisy state (a simplified Universal Guidance approach)
+        #         # It tells the noise which direction to shift to respect the floor
+        #         energy, l_skate,l_sink = compute_physics_energy_basic(
+        #             chain, n_pk, index_mapping, curr_j, ff_win, f_win, stats, device
+        #         )
+        #         # if start == 0 and t_idx % 10 == 0: # Printing every 10 steps for a clean log
+        #         #     print(f"  [Win 0] Step {t_idx:02d} | Total: {energy.item():.5f} | Anchor: {l_skate.item():.5f} | Sink: {l_sink.item():.5f}")
+        #         # If energy > 0, calculate gradients
+        #         if energy.item() > 0:
+        #             grad = torch.autograd.grad(energy, curr_j)[0]
+        #         else:
+        #             grad = torch.zeros_like(curr_j)
+                    
+        #     with torch.no_grad():
+        #         # Normal DDPM step
+        #         curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_win)
+        #         # Apply guidance push!
+        #         curr_j = curr_j - (guidance_scale * grad)
+            # ---> PHYSICS GUIDANCE END <---
+
         for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
             
             # ---> PHYSICS GUIDANCE START <---
             curr_j = curr_j.detach().requires_grad_(True)
             
             with torch.enable_grad():
-                # We calculate energy directly on the noisy state (a simplified Universal Guidance approach)
-                # It tells the noise which direction to shift to respect the floor
-                energy, l_skate,l_sink = compute_physics_energy_basic(
-                    chain, n_pk, index_mapping, curr_j, ff_win, f_win, stats, device
+                # 1. Ask the model for its clean guess (x_0)
+                pred_x0 = model(curr_j, t_idx, f_win)
+                
+                # 2. Calculate energy on the CLEAN GUESS, not the noise!
+                energy, l_skate, l_sink = compute_physics_energy_basic(
+                    chain, n_pk, index_mapping, pred_x0, ff_win, f_win, stats, device
                 )
-                # if start == 0 and t_idx % 10 == 0: # Printing every 10 steps for a clean log
-                #     print(f"  [Win 0] Step {t_idx:02d} | Total: {energy.item():.5f} | Anchor: {l_skate.item():.5f} | Sink: {l_sink.item():.5f}")
-                # If energy > 0, calculate gradients
+                
+                # Optional: Print loss to track it
+                # if start == 0 and t_idx % 10 == 0: 
+                #     print(f"  [Win 0] Step {t_idx:02d} | Total: {energy.item():.5f}")
+                
                 if energy.item() > 0:
+                    # 3. Calculate gradient w.r.t the noisy state (curr_j)
                     grad = torch.autograd.grad(energy, curr_j)[0]
+                    
+                    # 4. CRITICAL: Normalize the gradient to prevent explosion
+                    grad_norm = torch.norm(grad, p=2, dim=-1, keepdim=True) + 1e-8
+                    grad = grad / grad_norm
                 else:
                     grad = torch.zeros_like(curr_j)
                     
             with torch.no_grad():
-                # Normal DDPM step
-                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
-                # Apply guidance push!
-                curr_j = curr_j - (guidance_scale * grad)
-            # ---> PHYSICS GUIDANCE END <---
-
-            # with torch.enable_grad():
-            #     energy = compute_physics_energy(
-            #         chain, n_pk, index_mapping, curr_j, ff_win, f_win, stats, device
-            #     )
+                # 5. ORDER OF OPERATIONS: Apply the guidance nudge FIRST
+                curr_j_guided = curr_j - (guidance_scale * grad)
                 
-            #     if energy.item() > 0:
-            #         grad = torch.autograd.grad(energy, curr_j)[0]
-                    
-            #         # ---> THE FIX: GRADIENT NORMALIZATION <---
-            #         # This prevents the physics engine from "breaking the legs" 
-            #         # by forcing the gradient to always have a safe, maximum magnitude.
-            #         grad_norm = torch.norm(grad, p=2, dim=-1, keepdim=True) + 1e-8
-            #         grad = grad / grad_norm 
-                    
-            #     else:
-            #         grad = torch.zeros_like(curr_j)
-                    
-            # with torch.no_grad():
-            #     curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
-            #     # Now that grad is normalized, we might need a slightly different scale.
-            #     # Start with 0.1 or 1.0, and adjust from there.
-            #     curr_j = curr_j - (guidance_scale * grad)
+                # 6. Take the normal DDPM step using the nudged state
+                curr_j = ddpm.sample_reverse_selfs(model, curr_j_guided, t_idx, f_win)
                 
         full_pred[start:end] += curr_j.squeeze(0)
         count_map[start:end] += 1.0
@@ -239,7 +256,7 @@ def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device,
     final_pred = full_pred / torch.clamp(count_map, min=1.0)
     
     # Denormalize (Make sure to only use the 12 lower limb scalers)
-    final_pred = (final_pred.cpu() * stats['j_s'][:12]) + stats['j_m'][:12]
+    final_pred = (final_pred.cpu() * stats['j_s'][:]) + stats['j_m'][:]
     
     return j_raw, final_pred.numpy()
 # ==========================================
@@ -371,13 +388,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics.npy"
+    f_path = data_path / "kinetics_feet.npy"
     j_path = data_path / "all_joints.npy"
     
-    j_path_FF= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
+    # j_path_FF= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
     # j_path_FF= f"DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joints_filtered_{trial_name}.csv"
 
-    # j_path_FF= f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
+    j_path_FF= f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
@@ -391,10 +408,26 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3.5/5] Initializing PyTorch Kinematics (Generic Human)...")
     
     # Load the clean generic human model directly from the library
-    human = robex.human.HumanLoader(height=1.55, weight=68, gender='male').robot
+    # human = robex.human.HumanLoader(height=1.55, weight=68, gender='male').robot
     
-    with open(human.urdf, 'r') as f:
+    # with open(human.urdf, 'r') as f:
+    #     urdf_data = f.read()
+
+    urdf_path=f"DATA/urdf_scaled/Vinc/{subject_name}_scaled.urdf"
+    print(f"Loading URDF from: {urdf_path}")
+
+    with open(urdf_path, 'r', encoding='utf-8') as f:
         urdf_data = f.read()
+
+    # 1. On supprime la première ligne (la déclaration XML qui posait le 1er problème)
+    urdf_data = re.sub(r'<\?xml[^>]+\?>', '', urdf_data)
+
+    # 2. On supprime les balises <texture> mal formées (le 2ème problème)
+    urdf_data = re.sub(r'<texture[^>]*>', '', urdf_data)
+
+    # 3. On convertit la chaîne propre en bytes pour PyTorch Kinematics
+    urdf_data_bytes = urdf_data.encode('utf-8')
+
         
     # Build the differentiable chain
     chain = pk.build_chain_from_urdf(urdf_data).to(device=device)
@@ -429,7 +462,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         model, ddpm, f_path, j_path, j_path_FF, stats, device,
         chain=chain, n_pk=n_pk, index_mapping=index_mapping, 
         window_size=128, stride=64, inference_steps=1000,
-        guidance_scale=5.0 # <--- Start with 5.0, increase if still skating
+        guidance_scale=0.00 # <--- Start with 5.0, increase if still skating
     )
 
     # ===== 6. SAVE RESULTS =====
@@ -495,18 +528,21 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "s1"     
-    TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
+    # SUBJECT_NAME = "s1"     
+    # TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
 
-    # SUBJECT_NAME = "Jeremy"     
-    # TRIAL_NAME = "Trial111"           
+    SUBJECT_NAME = "Jeremy"     
+    TRIAL_NAME = "Trial111"           
           
     
-    MODEL_PATH = "./training_res/synth_res/results_PE_sin_cross_fixed/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./training_res/synth_res/results_PE_sin_cross_fixed/scalers_concat.json"
-    # DATA_ROOT = "./processed_data_feet"
-    DATA_ROOT = "./DATA/synth_npy/"
-    OUTPUT_DIR = "./inference_results_PE_sin_cross_synth_guided11"
+    # MODEL_PATH = "./training_res/synth_res/results_PE_sin_cross_fixed/diffusion_biomech_model_concat.pth"
+    # SCALERS_PATH = "./training_res/synth_res/results_PE_sin_cross_fixed/scalers_concat.json"
+    # DATA_ROOT = "./DATA/synth_npy/"
+
+    MODEL_PATH = "./training_res/results_PE_sin_cross_real_selfs/diffusion_biomech_model_best.pth"
+    SCALERS_PATH = "./training_res/results_PE_sin_cross_real_selfs/scalers_concat.json"
+    DATA_ROOT = "/datasets/GRF2Kine/processed_data_feet"
+    OUTPUT_DIR = "./inference_results_PE_sin_cross_selfs_best_guided"
     
     # ===== RUN INFERENCE =====
     run_inference(

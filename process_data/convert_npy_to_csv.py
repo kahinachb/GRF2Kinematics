@@ -1,8 +1,8 @@
 import numpy as np
 import csv
 
-input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.npy"
-output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv"
+input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/Jeremy_Trial111_prediction.npy"
+output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/Jeremy_Trial111_prediction.csv"
 
 data = np.load(input_npy)   # shape (N, 2)
 

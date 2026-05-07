@@ -101,7 +101,7 @@ class DiffusionTransformer(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
         
         # ---> CHANGED: Encoder to Decoder for Cross-Attention <---
-        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True, dropout=0.1)
         self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
         
         self.output_layer = nn.Linear(embed_dim, joint_dim)
@@ -217,7 +217,7 @@ def run_experiment():
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
     model = DiffusionTransformer().to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4,weight_decay=1e-2)
     train_losses, val_losses = [], []
 
     epochs = 1

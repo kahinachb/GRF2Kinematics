@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 
-path_joint_pred = "inference_results_PE_sin_cross_synth_guided1/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv"
-path_joint = "DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
+path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross/Jeremy_Trial111_prediction_guided.csv"
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv"
 
 dofs = [
     "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",

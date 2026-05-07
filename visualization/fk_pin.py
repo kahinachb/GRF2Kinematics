@@ -19,12 +19,12 @@ from utils.viz_utils import add_sphere, place,set_tf, safe_place, place
 from pinocchio import Quaternion
 import example_robot_data as robex
 
-which = 'Anais'
-subject = 'subject01'
-task = 'walk'
+which = 'Vinc'
+subject = 'Jeremy'
+task = 'Trial111'
 
 
-# urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path = f'/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 
@@ -97,12 +97,12 @@ mks_names = start_sample_dict.keys()
 
 urdf_name = "human.urdf"
 urdf_meshes_path = "motif/model/human_urdf"
-# model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
-human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
-model_h = human.model
-data_h = human.data
-coll_h = human.collision_model
-vis_h = human.visual_model
+model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
+# human = robex.human.HumanLoader(height=1.55, weight=68.78, gender='male').robot
+# model_h = human.model
+# data_h = human.data
+# coll_h = human.collision_model
+# vis_h = human.visual_model
 
 
 ################################################################################LOCK JOINTS
@@ -124,7 +124,13 @@ print(model_h.nq)
 data_h = pin.Data(model_h)
 # ###############################################################################################################
 
+pin_body_names = [frame.name for frame in model_h.frames if frame.type == pin.FrameType.BODY]
 
+# Afficher le résultat
+print(f"Nombre de frames de type BODY dans Pinocchio : {len(pin_body_names)}")
+print("Noms des BODY Pinocchio :")
+for name in pin_body_names:
+    print(f"- {name}")
 
 data_h = model_h.createData()
 #Meshcat
@@ -182,8 +188,8 @@ for i in range(len(q_ref)):
     R_final = R_corr @ R_original 
     quat_final = pin.Quaternion( R_final)
     
-    q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
-    q_ref[i][0:3] = R_corr @ q_current[0:3]
+    # q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    # q_ref[i][0:3] = R_corr @ q_current[0:3]
 
     pos = pin.forwardKinematics(model_h, data_h, q_ref[i])
     pin.updateFramePlacements(model_h, data_h)
@@ -217,7 +223,7 @@ for i in range(len(q_ref)):
 df_output = pd.DataFrame(data_list)
 
 # Définir le nom du fichier de sortie (par exemple dans le même dossier que le script)
-output_csv_path = f"pin_fk_results_{subject}_{task}.csv"
+output_csv_path = f"pin_fk_results_{subject}_{task}_urdf.csv"
 df_output.to_csv(output_csv_path, index=False)
 
 print(f"✅ Sauvegarde terminée : {output_csv_path}")
