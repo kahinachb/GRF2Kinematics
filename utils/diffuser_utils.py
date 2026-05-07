@@ -56,12 +56,11 @@ class DDPM:
         posterior_mean = coef1 * pred_x0 + coef2 * x_t
         
         # 4. Add the variance/noise (Langevin dynamics)
-        # Posterior variance is roughly beta_t (or the exact formula below)
-        posterior_variance = beta_t * (1 - alpha_bar_t_prev) / (1 - alpha_bar_t)
+        beta_t = beta_t * (1 - alpha_bar_t_prev) / (1 - alpha_bar_t) 
         noise = torch.randn_like(x_t)
         
         # Calculate x_{t-1}
-        x_t_prev = posterior_mean + math.sqrt(posterior_variance) * noise
+        x_t_prev = posterior_mean + math.sqrt(beta_t) * noise
         
         return x_t_prev
     

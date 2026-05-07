@@ -27,7 +27,7 @@ dt = 1.0 / fps
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/Jeremy_Trial111_prediction.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided/Jeremy_Trial111_prediction.csv"
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv"
 
 
@@ -200,12 +200,12 @@ for i in range(len(q_ref)):
 
     viz_human.display(q_ref[i])
     viz_human_pred.display(q_pred_full)
-    images.append(viewer.get_image())
+#     images.append(viewer.get_image())
 
     
-video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/out_guided_selfs.mp4"
-imageio.mimsave(video_path, images, fps=fps, codec='libx264')
-print(f"[MeshCat] Video saved to: {video_path}")
+# video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/out_guided_selfs.mp4"
+# imageio.mimsave(video_path, images, fps=fps, codec='libx264')
+# print(f"[MeshCat] Video saved to: {video_path}")
 
 
 

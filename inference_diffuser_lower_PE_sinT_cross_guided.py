@@ -79,7 +79,10 @@ def compute_physics_energy_basic(chain, n_pk, index_mapping, pred_joints_norm, f
     l_skate = (l_vel_xy ** 2).sum(dim=-1) * l_contact
 
     loss_skate = r_skate.mean() + l_skate.mean()
-    total_loss = loss_skate + loss_sink
+    weight_sink = 10.0   # Force the model to prioritize getting out of the floor
+    weight_skate = 1.0   # Secondary priority
+
+    total_loss = (weight_skate * loss_skate) + (weight_sink * loss_sink)
     return total_loss, loss_skate, loss_sink
 
 def compute_physics_energy(chain, n_pk, index_mapping, pred_joints_norm, ff_tensor, forces, stats, device):
@@ -171,6 +174,7 @@ def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device,
     print(ff_raw.shape)
     # Extract  Joints (Cols 6 to 17)
     j_raw = j_full_raw[:, 6:18]
+   
  
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     ff_tensor_full = torch.from_numpy(ff_raw).float().to(device) # Send FF to GPU
@@ -228,8 +232,8 @@ def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device,
                 )
                 
                 # Optional: Print loss to track it
-                # if start == 0 and t_idx % 10 == 0: 
-                #     print(f"  [Win 0] Step {t_idx:02d} | Total: {energy.item():.5f}")
+                if start == 0 and t_idx % 10 == 0: 
+                    print(f"  [Win 0] Step {t_idx:02d} | Total: {energy.item():.5f}")
                 
                 if energy.item() > 0:
                     # 3. Calculate gradient w.r.t the noisy state (curr_j)
@@ -437,8 +441,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # Map 12 predicted joints to the URDF
     ddpm_joint_names = [
-        "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot", "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
-        "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot", "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add"
+        "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot", "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
+        "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot", "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add"
     ]
     
     # Use dictionary mapping
@@ -462,7 +466,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         model, ddpm, f_path, j_path, j_path_FF, stats, device,
         chain=chain, n_pk=n_pk, index_mapping=index_mapping, 
         window_size=128, stride=64, inference_steps=1000,
-        guidance_scale=0.00 # <--- Start with 5.0, increase if still skating
+        guidance_scale=0.1 # <--- Start with 5.0, increase if still skating
     )
 
     # ===== 6. SAVE RESULTS =====
