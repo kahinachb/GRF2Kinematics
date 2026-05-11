@@ -20,14 +20,14 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'Kahina_6kg'
+subject = 'Subject1'
 
-task = 'squat_6kg'
-which = 'HUMANOIDS'
+task = 'Trial111'
+which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
@@ -234,119 +234,119 @@ R_corr = np.array([[1, 0,           0          ],
 
 for i in range(len(q_ref)):
 
-    q_current = q_ref_df.iloc[i].to_numpy()
-    pos_bassin_rnea = q_current[0:3]
-    quat_bassin = q_current[3:7] # qx, qy, qz, qw
+    # q_current = q_ref_df.iloc[i].to_numpy()
+    # pos_bassin_rnea = q_current[0:3]
+    # quat_bassin = q_current[3:7] # qx, qy, qz, qw
 
-    quat_original = pin.Quaternion(q_current[6], q_current[3], q_current[4], q_current[5]) #(w,x,y,z) or : q_current[3:7]
-    R_original = quat_original.toRotationMatrix()
+    # quat_original = pin.Quaternion(q_current[6], q_current[3], q_current[4], q_current[5]) #(w,x,y,z) or : q_current[3:7]
+    # R_original = quat_original.toRotationMatrix()
 
-    T_bassin = np.eye(4)
+    # T_bassin = np.eye(4)
 
-    R_final = R_original 
-    quat_final = pin.Quaternion(R_final)
+    # R_final = R_original 
+    # quat_final = pin.Quaternion(R_final)
 
-    T_bassin[:3, :3] = R_final
-    T_bassin[:3, 3] = pos_bassin_rnea
-    place(viewer, "pos_bassin_RNEA", T_bassin[:3, 3])
-    set_tf(viewer, "pos_bassin_RNEA/frame", T_bassin[:3, :3])
+    # T_bassin[:3, :3] = R_final
+    # T_bassin[:3, 3] = pos_bassin_rnea
+    # place(viewer, "pos_bassin_RNEA", T_bassin[:3, 3])
+    # set_tf(viewer, "pos_bassin_RNEA/frame", T_bassin[:3, :3])
     
-    q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
-    q_ref[i][0:3] =q_current[0:3]
+    # q_ref[i][3:7] = [quat_final.x, quat_final.y, quat_final.z, quat_final.w]
+    # q_ref[i][0:3] =q_current[0:3]
 
-    quat = pin.Quaternion(q_ref[i, 3:7])
-    rot_base= quat.matrix()
-    pos_bassin = q_ref[i, 0:3]
+    # quat = pin.Quaternion(q_ref[i, 3:7])
+    # rot_base= quat.matrix()
+    # pos_bassin = q_ref[i, 0:3]
 
-    tau = pin.rnea(model_h, data_h, q_ref[i, :], v_ref[i, :], a_ref[i, :])
-    pin.forwardKinematics(model_h, data_h, q_ref[i, :], v_ref[i, :], a_ref[i, :])
-    wrench_base = data_h.f[1]         
-    oM1 = data_h.oMi[1]              
-    f_world = oM1.act(wrench_base) 
+    # tau = pin.rnea(model_h, data_h, q_ref[i, :], v_ref[i, :], a_ref[i, :])
+    # pin.forwardKinematics(model_h, data_h, q_ref[i, :], v_ref[i, :], a_ref[i, :])
+    # wrench_base = data_h.f[1]         
+    # oM1 = data_h.oMi[1]              
+    # f_world = oM1.act(wrench_base) 
 
     
-    F = f_world.linear
-    M = f_world.angular
-    M = (rot_base @ tau[3:6] ) + np.cross(pos_bassin , F)
+    # F = f_world.linear
+    # M = f_world.angular
+    # M = (rot_base @ tau[3:6] ) + np.cross(pos_bassin , F)
 
 
 
-    Fx, Fy, Fz = F
-    Mx, My, Mz = M
+    # Fx, Fy, Fz = F
+    # Mx, My, Mz = M
 
-    cop_x = -My / Fz
-    cop_y =  Mx / Fz
-    cop_z = 0.0
-    cop_rnea = np.array([cop_x, cop_y, cop_z])
+    # cop_x = -My / Fz
+    # cop_y =  Mx / Fz
+    # cop_z = 0.0
+    # cop_rnea = np.array([cop_x, cop_y, cop_z])
    
-    cop_r = cop1[i]  # (x,y,z)
-    cop_l = cop2[i]
+    # cop_r = cop1[i]  # (x,y,z)
+    # cop_l = cop2[i]
 
-    if which == 'HUMANOIDS' or which=='Anais' or which=='Vinc': 
-        Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
-        Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
+    # if which == 'HUMANOIDS' or which=='Anais' or which=='Vinc': 
+    #     Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
+    #     Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
 
-        Fx_r = df_cop[find_col(df_cop, "Fx1_glob")].values.astype(float)
-        Fx_l = df_cop[find_col(df_cop, "Fx2_glob")].values.astype(float)
+    #     Fx_r = df_cop[find_col(df_cop, "Fx1_glob")].values.astype(float)
+    #     Fx_l = df_cop[find_col(df_cop, "Fx2_glob")].values.astype(float)
 
-        Fy_r = df_cop[find_col(df_cop, "Fy1_glob")].values.astype(float)
-        Fy_l = df_cop[find_col(df_cop, "Fy2_glob")].values.astype(float)
+    #     Fy_r = df_cop[find_col(df_cop, "Fy1_glob")].values.astype(float)
+    #     Fy_l = df_cop[find_col(df_cop, "Fy2_glob")].values.astype(float)
 
-    # elif which =='Vinc':
-    #     Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
-    #     Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
+    # # elif which =='Vinc':
+    # #     Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
+    # #     Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
 
-    #     Fx_r = df_cop[find_col(df_cop, "FX1")].values.astype(float)
-    #     Fx_l = df_cop[find_col(df_cop, "FX2")].values.astype(float)
+    # #     Fx_r = df_cop[find_col(df_cop, "FX1")].values.astype(float)
+    # #     Fx_l = df_cop[find_col(df_cop, "FX2")].values.astype(float)
 
-    #     Fy_r = df_cop[find_col(df_cop, "FY1")].values.astype(float)
-    #     Fy_l = df_cop[find_col(df_cop, "FY2")].values.astype(float)
+    # #     Fy_r = df_cop[find_col(df_cop, "FY1")].values.astype(float)
+    # #     Fy_l = df_cop[find_col(df_cop, "FY2")].values.astype(float)
 
         
-    # else : 
-    #     Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
-    #     Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
+    # # else : 
+    # #     Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
+    # #     Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
 
-    #     Fx_r = df_cop[find_col(df_cop, "Fx1")].values.astype(float)
-    #     Fx_l = df_cop[find_col(df_cop, "Fx2")].values.astype(float)
+    # #     Fx_r = df_cop[find_col(df_cop, "Fx1")].values.astype(float)
+    # #     Fx_l = df_cop[find_col(df_cop, "Fx2")].values.astype(float)
 
-    #     Fy_r = df_cop[find_col(df_cop, "Fy1")].values.astype(float)
-    #     Fy_l = df_cop[find_col(df_cop, "Fy2")].values.astype(float)
+    # #     Fy_r = df_cop[find_col(df_cop, "Fy1")].values.astype(float)
+    # #     Fy_l = df_cop[find_col(df_cop, "Fy2")].values.astype(float)
 
-    Fz_total = Fz_r + Fz_l
+    # Fz_total = Fz_r + Fz_l
 
-    cop_global = (Fz_r[i] * cop_r + Fz_l[i] * cop_l) / Fz_total[i]
+    # cop_global = (Fz_r[i] * cop_r + Fz_l[i] * cop_l) / Fz_total[i]
 
-        # 1. Préparation des vecteurs (vérifie bien que ce sont des np.array de taille 3)
-    force_r = np.array([Fx_r[i], Fy_r[i], Fz_r[i]])
-    force_l = np.array([Fx_l[i], Fy_l[i], Fz_l[i]])
+    #     # 1. Préparation des vecteurs (vérifie bien que ce sont des np.array de taille 3)
+    # force_r = np.array([Fx_r[i], Fy_r[i], Fz_r[i]])
+    # force_l = np.array([Fx_l[i], Fy_l[i], Fz_l[i]])
 
-    # 2. Échelle de la flèche (ex: 1000N = 1m)
-    f_scale = 0.001 
+    # # 2. Échelle de la flèche (ex: 1000N = 1m)
+    # f_scale = 0.001 
 
-    # Affichage force pied DROIT (Rouge)
-    if abs(Fz_r[i]) > 10.0:
-        draw_force_arrow(viewer, "force_R", cop1[i], force_r, color=0x0000ff, scale=f_scale)
-    else:
-        viewer["force_R"].delete() # Supprime la flèche quand le pied lève
+    # # Affichage force pied DROIT (Rouge)
+    # if abs(Fz_r[i]) > 10.0:
+    #     draw_force_arrow(viewer, "force_R", cop1[i], force_r, color=0x0000ff, scale=f_scale)
+    # else:
+    #     viewer["force_R"].delete() # Supprime la flèche quand le pied lève
 
-    # Affichage force pied GAUCHE (Bleu)
-    if abs(Fz_l[i]) > 10.0:
-        draw_force_arrow(viewer, "force_L", cop2[i], force_l, color=0xFF8800, scale=f_scale)
-    else:
-        viewer["force_L"].delete()
+    # # Affichage force pied GAUCHE (Bleu)
+    # if abs(Fz_l[i]) > 10.0:
+    #     draw_force_arrow(viewer, "force_L", cop2[i], force_l, color=0xFF8800, scale=f_scale)
+    # else:
+    #     viewer["force_L"].delete()
 
-    # Affichage de la force totale (Vert)
-    force_total = force_r + force_l
-    if abs(Fz_total[i]) > 10.0:
-        draw_force_arrow(viewer, "force_Total", cop_global, force_total, color=0x00ff00, scale=f_scale)
+    # # Affichage de la force totale (Vert)
+    # force_total = force_r + force_l
+    # if abs(Fz_total[i]) > 10.0:
+    #     draw_force_arrow(viewer, "force_Total", cop_global, force_total, color=0x00ff00, scale=f_scale)
             
 
-    safe_place(viewer,"COP_RNEA", cop_rnea)
-    safe_place(viewer, "COP_platform_global", cop_global)
+    # safe_place(viewer,"COP_RNEA", cop_rnea)
+    # safe_place(viewer, "COP_platform_global", cop_global)
 
-    safe_place(viewer,"COP_right",  cop1[i])
-    safe_place(viewer, "COP_left", cop2[i])
+    # safe_place(viewer,"COP_right",  cop1[i])
+    # safe_place(viewer, "COP_left", cop2[i])
     # frame = mks_dict[i]
     # for name in mks_names:
     #     pos= frame[name].reshape(3,)

@@ -6,9 +6,9 @@ from pathlib import Path
 # CONFIGURATION
 # =========================================================
 # Remplace ce chemin par ton fichier .npy
-file_path_k = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy/s1/squat_variant_980_dz-0.080_dx+0.023_dy-0.017/kinetics.npy")
+file_path_k = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_feet/Christine/Trial107/all_joints_.npy")
 # Exemple :
-file_path_j = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy/s1/squat_variant_980_dz-0.080_dx+0.023_dy-0.017/all_joints.npy")
+file_path_j = Path("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_feet/Christine/Trial107/all_joints.npy")
 
 # =========================================================
 # LOAD FILE

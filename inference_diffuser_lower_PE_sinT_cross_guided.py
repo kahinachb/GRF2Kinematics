@@ -253,7 +253,7 @@ def predict_full_trial(model, ddpm, f_path, j_path,j_path_FF, stats, device,
                 curr_j_guided = curr_j - (guidance_scale * grad)
                 
                 # 6. Take the normal DDPM step using the nudged state
-                curr_j = ddpm.sample_reverse_selfs(pred_x0, curr_j_guided, t_idx, f_win)
+                curr_j = ddpm.sample_reverse_selfs(model, curr_j_guided, t_idx, f_win)
                 
         full_pred[start:end] += curr_j.squeeze(0)
         count_map[start:end] += 1.0
@@ -548,7 +548,7 @@ if __name__ == "__main__":
 
     MODEL_PATH = "./training_res/results_PE_sin_cross_real_selfs/diffusion_biomech_model_best.pth"
     SCALERS_PATH = "./training_res/results_PE_sin_cross_real_selfs/scalers_concat.json"
-    DATA_ROOT = "/datasets/GRF2Kine/processed_data_feet"
+    DATA_ROOT = "processed_data_feet"
     OUTPUT_DIR = "./inference_results_PE_sin_cross_selfs_best_guided"
     
     # ===== RUN INFERENCE =====

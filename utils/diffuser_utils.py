@@ -29,12 +29,12 @@ class DDPM:
         sqrt_1ab = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1)
         return sqrt_ab * x_0 + sqrt_1ab * noise
 
-    def sample_reverse_selfs(self, pred_x0, x_t, t, cond=None):
+    def sample_reverse_selfs(self, model, x_t, t, cond=None):
         """
         Takes a step backwards from x_t to x_{t-1} assuming the model predicts x_0 directly.
         """
         # 1. Ask the model to predict the clean data (x_0)
-        # pred_x0 = model(x_t, t, cond)
+        pred_x0 = model(x_t, t, cond)
         
         # If t is 0, we just return the predicted clean data!
         if t == 0:

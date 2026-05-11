@@ -47,20 +47,20 @@ def analyze_hybrid_structure(output_dir: str):
             results[fs]["files"] += 1
             results[fs]["durations"].append(duration)
 
-            print(f"{subject_name[:12]:<12} | {trial_dir.name[:20]:<20} | {filename:<16} |{n_steps} |{fs:<6} | {duration:.2f}s")
+            # print(f"{subject_name[:12]:<12} | {trial_dir.name[:20]:<20} | {filename:<16} |{n_steps} |{fs:<6} | {duration:.2f}s")
 
             # print(f"   -> Exemple première ligne : {data[0]}")
 
             # print("\n=== STRUCTURE DES DONNÉES ===")
-            print(f"Forces shape : {data.shape}")
-            print(f"Forces dtype : {data.dtype}")
+            # print(f"Forces shape : {data.shape}")
+            # print(f"Forces dtype : {data.dtype}")
 
             joints_path = trial_dir / "all_joints.npy"
-            if joints_path.exists():
-                joints_data = np.load(joints_path, mmap_mode='r')
-                # print(f"   -> Exemple première ligne : {joints_data[0]}")
-                print(f"Joints shape : {joints_data.shape}")
-                print(f"Joints dtype : {joints_data.dtype}")
+            # if joints_path.exists():
+            #     joints_data = np.load(joints_path, mmap_mode='r')
+            #     # print(f"   -> Exemple première ligne : {joints_data[0]}")
+            #     print(f"Joints shape : {joints_data.shape}")
+            #     print(f"Joints dtype : {joints_data.dtype}")
             # input()
 
 
@@ -87,4 +87,4 @@ def analyze_hybrid_structure(output_dir: str):
     print(f"TOTAL GLOBAL : {results[300]['files'] + results[100]['files']} fichiers analysés.")
 
 if __name__ == "__main__":
-    analyze_hybrid_structure("./processed_data_pelvis")
+    analyze_hybrid_structure("./processed_data_feet")

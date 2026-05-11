@@ -181,7 +181,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         
         for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
             with torch.no_grad():
-                curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+                curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_win)
         
         full_pred[start:end] += curr_j.squeeze(0)
         count_map[start:end] += 1.0
@@ -263,8 +263,8 @@ def run_experiment():
             
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
-            pred_noise = model(j_noisy, t, f)
-            loss = nn.MSELoss()(pred_noise, noise)
+            pred_x0 = model(j_noisy, t, f)
+            loss = nn.MSELoss()(pred_x0, noise)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
             optimizer.step()
@@ -278,24 +278,27 @@ def run_experiment():
                 t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
                 noise = torch.randn_like(j)
                 j_noisy = ddpm.sample_forward(j, t, noise)
-                v_loss += nn.MSELoss()(model(j_noisy, t, f), noise).item()
+                
+                # Model predicts x0, compare it to j
+                pred_x0 = model(j_noisy, t, f)
+                v_loss += nn.MSELoss()(pred_x0, j).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
         print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
 
-    avg_train_loss = t_loss / len(train_loader)
-    avg_val_loss = v_loss / len(val_loader)
-    train_losses.append(avg_train_loss)
-    val_losses.append(avg_val_loss)
+        avg_train_loss = t_loss / len(train_loader)
+        avg_val_loss = v_loss / len(val_loader)
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
 
-    if avg_val_loss < best_val_loss:
-        print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
-        best_val_loss = avg_val_loss
-        
-        # Save the model state dict specifically as the "best" model
-        torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
-        
+        if avg_val_loss < best_val_loss:
+            print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
+            best_val_loss = avg_val_loss
+            
+            # Save the model state dict specifically as the "best" model
+            torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
+
     torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
@@ -307,7 +310,7 @@ def run_experiment():
     curr_j = torch.randn((1, 128, 35)).to(device)
     for t_idx in reversed(range(ddpm.n_steps)):
         with torch.no_grad():
-            curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_in)
+            curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_in)
 
     pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
     ref = (j_ref * stats['j_s']) + stats['j_m']
