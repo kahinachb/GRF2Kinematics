@@ -207,8 +207,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics_deltaf.npy"
-    j_path = data_path / "all_joints_deltaf.npy"
+    f_path = data_path / "kinetics_feet.npy"
+    j_path = data_path / "all_joints.npy"
     
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -266,8 +266,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     axes[0].legend()
     plt.suptitle("Freeflyer joints (0–5)")
     plt.tight_layout()
-    # plt.savefig(output_dir / "freeflyer_joints.png")
-    # plt.close()
+    plt.savefig(output_dir / "freeflyer_joints.png")
+    plt.close()
 
     fig, axes = plt.subplots(12, 1, figsize=(14, 20))
 
@@ -286,8 +286,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     plt.suptitle("Lower body joints (6–17)")
     plt.tight_layout()
-    # plt.savefig(output_dir / "lower_body_joints.png")
-    # plt.close()
+    plt.savefig(output_dir / "lower_body_joints.png")
+    plt.close()
 
     fig, axes = plt.subplots(17, 1, figsize=(14, 22))
 
@@ -306,9 +306,9 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     plt.suptitle("Upper body joints (18–34)")
     plt.tight_layout()
-    # plt.savefig(output_dir / "upper_body_joints.png")
-    # plt.close()
-    plt.show()
+    plt.savefig(output_dir / "upper_body_joints.png")
+    plt.close()
+    # plt.show()
 
 
 # ==========================================
@@ -318,14 +318,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "s1_deltaf"     
-    TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
-      
+    SUBJECT_NAME = "Jeremy"     
+    TRIAL_NAME = "Trial111"           
           
     
-    MODEL_PATH = "./training_res/results_transfo_full_ff/diffusion_biomech_model_concat.pth"
-    SCALERS_PATH = "./training_res/results_transfo_full_ff/scalers_concat.json"
-    DATA_ROOT = "./DATA/synth_npy"
+    MODEL_PATH = "./training_res/results_full_ff_real/diffusion_biomech_model_concat.pth"
+    SCALERS_PATH = "./training_res/results_full_ff_real/scalers_concat.json"
+    DATA_ROOT = "/datasets/GRF2Kine/processed_data_feet"
     OUTPUT_DIR = "./inference_results_transfo_full_ff"
     
     # ===== RUN INFERENCE =====
