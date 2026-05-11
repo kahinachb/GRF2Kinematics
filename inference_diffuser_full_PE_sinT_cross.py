@@ -66,7 +66,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
 
             for t_idx in reversed(range(0, ddpm.n_steps, step_size)):
                 with torch.no_grad():
-                    curr_j = ddpm.sample_reverse(model, curr_j, t_idx, f_win)
+                    curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_win)
 
             full_pred[start:end] += curr_j.squeeze(0)
             count_map[start:end] += 1.0
