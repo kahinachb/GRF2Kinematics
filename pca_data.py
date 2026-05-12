@@ -25,7 +25,7 @@ all_data = []
 
 for joints_file in root.rglob("all_joints.npy"):
 
-    data = np.load(joints_file)
+    data = np.load(joints_file) #[:, 6:18]
 
     # data shape = (T, 35)
 
@@ -81,3 +81,22 @@ plt.grid()
 plt.show()
 
 print(pca.components_[0])
+
+eigenvalues = pca.explained_variance_
+
+sorted_eigenvalues = np.sort(eigenvalues)[::-1]
+
+print("Valeurs propres :")
+for i, val in enumerate(sorted_eigenvalues):
+    print(f"PC{i+1}: {val:.4f}")
+
+# 3. Plot the Scree Plot
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, len(sorted_eigenvalues) + 1), sorted_eigenvalues, 'o-', linewidth=2)
+plt.title("Scree Plot ")
+plt.xlabel("Composantes")
+plt.ylabel("Variance")
+plt.grid(True, linestyle='--')
+
+# Optionnel: marquer la cassure si elle est évidente
+plt.show()

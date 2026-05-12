@@ -107,14 +107,16 @@ class DiffusionTransformer(nn.Module):
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
     def forward(self, x, t, cond):
-        # 1. Safeguard: Ensure t is a 1D tensor (handles inference loop integers)
+
         if isinstance(t, (int, float)):
-            t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
+            t = torch.tensor([t], device=x.device, dtype=torch.float32).expand(x.shape[0])
         elif t.dim() == 0:
             t = t.unsqueeze(0).expand(x.shape[0])
-
+            
+        # Optionnel mais recommandé : On "étire" t pour l'embedding sinusoidal
+        t_input = t * 1000.0
         # 2. Process Time Embedding
-        t_emb = self.time_mlp(t).unsqueeze(1) 
+        t_emb = self.time_mlp(t_input).unsqueeze(1) 
         
         # 3. Process Target Sequence (Noisy Joints + Time + Position)
         x_emb = self.joint_embed(x) + t_emb 
@@ -133,11 +135,11 @@ class DiffusionTransformer(nn.Module):
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
-def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=128, stride=64):
+def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, steps=25):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 7:19] # Focus bas du corps
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -145,23 +147,30 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     full_pred = torch.zeros((T, 12)).to(device)
     count_map = torch.zeros((T, 12)).to(device)
 
-    print(f"  [INF] Sampling trial complet ({T} frames)...")
+    print(f"  [INF] Sampling CFM (Euler) sur essai complet ({T} frames)...")
     
+    dt = 1.0 / steps
+
     for start in range(0, T - window_size, stride):
         end = start + window_size
         f_win = f_norm[start:end].unsqueeze(0).to(device)
         
-        # Start from pure noise
-        curr_j = torch.randn((1, window_size, 12)).to(device)
+        # 1. Départ du bruit pur (x_0) à t=0
+        curr_x = torch.randn((1, window_size, 12)).to(device)
         
-        # Reverse Diffusion loop
-        for t_idx in reversed(range(ddpm.n_steps)):
+        # 2. Intégration d'Euler (Flow Matching Inference)
+        for i in range(steps):
+            t_val = i / steps
+            t = torch.ones((1,), device=device) * t_val
+            
             with torch.no_grad():
-                # This now calls the NEW math that blends x_t and x_0
-                curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_win)
+                # Le modèle prédit la vitesse (v)
+                v = model(curr_x, t, f_win)
+                
+            # x_{t+dt} = x_t + v * dt
+            curr_x = curr_x + v * dt
         
-        # curr_j is now your final denoised joint sequence
-        full_pred[start:end] += curr_j.squeeze(0)
+        full_pred[start:end] += curr_x.squeeze(0)
         count_map[start:end] += 1.0
 
     final_pred = full_pred / torch.clamp(count_map, min=1.0)
@@ -175,7 +184,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/datasets/GRF2Kine/synth_npy")
 
-    results_dir = Path("results_PE_sin_cross_syn_selfs")
+    results_dir = Path("results_FM")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = [d for d in data_root.iterdir() if d.is_dir()]
@@ -224,92 +233,74 @@ def run_experiment():
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
     val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
-    # Initialisation DDPM
-    ddpm = DDPM(device, n_steps=1000)
-    model = DiffusionTransformer().to(device)
+    # --- Initialisation Modèle (Ton Transformer est compatible !) ---
+    model = DiffusionTransformer(joint_dim=12).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1
-    print(f"\n[START] Entraînement DDPM...")
+    epochs = 1 # Le CFM peut nécessiter plus d'epochs mais converge vers un meilleur résultat
     best_val_loss = float('inf')
+
+    print(f"\n[START] Entraînement Conditional Flow Matching...")
     for epoch in range(epochs):
         model.train()
-        t_loss = 0
+        t_epoch_loss = 0
         for f, j in train_loader:
-            f, j = f.to(device), j.to(device)
+            f, j = f.to(device), j.to(device) # j est x_1 (target)
             
-            # DDPM Step sampling
-            t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
-            noise = torch.randn_like(j)
-            j_noisy = ddpm.sample_forward(j, t, noise)
+            # 1. CFM Sampling: t ~ U(0, 1)
+            t = torch.rand((j.shape[0],), device=device)
+            t_view = t.view(-1, 1, 1)
+            
+            # 2. Draw noise x_0 and create interpolation x_t
+            x_0 = torch.randn_like(j)
+            x_t = (1 - t_view) * x_0 + t_view * j 
+            
+            # 3. Target velocity: v_t = x_1 - x_0
+            target_v = j - x_0
             
             optimizer.zero_grad()
-            # On normalise t pour le modèle (0 à 1)
-            pred_x0 = model(j_noisy, t, f)
-            loss = nn.MSELoss()(pred_x0, j) 
+            pred_v = model(x_t, t, f)
+            
+            loss = nn.MSELoss()(pred_v, target_v)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            t_loss += loss.item()
+            t_epoch_loss += loss.item()
         
+        # --- Validation ---
         model.eval()
-        v_loss = 0
+        v_epoch_loss = 0
         with torch.no_grad():
             for f, j in val_loader:
                 f, j = f.to(device), j.to(device)
-                t = torch.randint(0, ddpm.n_steps, (j.shape[0],)).to(device)
-                noise = torch.randn_like(j)
-                j_noisy = ddpm.sample_forward(j, t, noise)
+                t = torch.rand((j.shape[0],), device=device)
+                t_view = t.view(-1, 1, 1)
+                x_0 = torch.randn_like(j)
+                x_t = (1 - t_view) * x_0 + t_view * j
+                target_v = j - x_0
                 
-                # Model predicts x0, compare it to j
-                pred_x0 = model(j_noisy, t, f)
-                v_loss += nn.MSELoss()(pred_x0, j).item()
+                pred_v = model(x_t, t, f)
+                v_epoch_loss += nn.MSELoss()(pred_v, target_v).item()
         
-        train_losses.append(t_loss/len(train_loader))
-        val_losses.append(v_loss/len(val_loader))
-        print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
+        avg_train = t_epoch_loss / len(train_loader)
+        avg_val = v_epoch_loss / len(val_loader)
+        train_losses.append(avg_train)
+        val_losses.append(avg_val)
 
-        avg_train_loss = t_loss / len(train_loader)
-        avg_val_loss = v_loss / len(val_loader)
-        train_losses.append(avg_train_loss)
-        val_losses.append(avg_val_loss)
+        print(f"Epoch {epoch:02d} | Loss: {avg_train:.6f} | Val: {avg_val:.6f}")
 
-        if avg_val_loss < best_val_loss:
-            print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
-            best_val_loss = avg_val_loss
-            
-            # Save the model state dict specifically as the "best" model
-            torch.save(model.state_dict(), results_dir / "diffusion_biomech_model_best.pth")
+        if avg_val < best_val_loss:
+            best_val_loss = avg_val
+            torch.save(model.state_dict(), results_dir / "cfm_best_model.pth")
 
-    torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
-
-    # --- INFERENCE SUR TEST (FENÊTRE) ---
-    print("[INF] Génération d'un exemple de test...")
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
-    f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
-    f_in = f_in.unsqueeze(0).to(device)
-    
-    curr_j = torch.randn((1, 128, 12)).to(device)
-    for t_idx in reversed(range(ddpm.n_steps)):
-        with torch.no_grad():
-            curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_in)
-
-    pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
-    ref = (j_ref * stats['j_s']) + stats['j_m']
-
-    fig, axes = plt.subplots(4, 3, figsize=(15, 12))
-    for i, ax in enumerate(axes.flatten()):
-        ax.plot(ref[:, i], 'k--', label='Ref'); ax.plot(pred[:, i], 'r', label='Pred')
-        ax.set_title(f"Joint {i+1}"); ax.legend()
-    plt.tight_layout(); plt.savefig(results_dir /"inference_test_concat.png"); plt.close()
-
-    # --- INFERENCE COMPLÈTE ---
-    print("\n[INF] Inférence sur un essai COMPLET...")
+   # --- INFERENCE TEST ---
+    # Utilise la nouvelle fonction sample_cfm (Euler)
+    print("\n[INF] Inférence finale sur un essai complet...")
     test_pairs = get_pairs(test_subs)
     random_trial = random.choice(test_pairs)
-    print("random_trial for test", random_trial)
-    ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
+    
+    ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, steps=25)
 
     fig, axes = plt.subplots(4, 3, figsize=(18, 14))
     for i, ax in enumerate(axes.flatten()):
@@ -317,7 +308,7 @@ def run_experiment():
         ax.plot(pred_full[:, i], 'r', label='DDPM Pred')
         ax.set_title(f"Joint {i+1}")
         if i == 0: ax.legend()
-    plt.suptitle(f"Full Trial DDPM Inference: {random_trial[0].parent.name}", fontsize=16)
+    plt.suptitle(f"Full Trial FM Inference: {random_trial[0].parent.name}", fontsize=16)
     plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference_concat.png"); plt.close()
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")

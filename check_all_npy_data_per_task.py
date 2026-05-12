@@ -280,6 +280,14 @@ def run_task_pca(dataset_root):
         
         cumvar = np.cumsum(pca.explained_variance_ratio_)
         
+        eigenvalues = pca.explained_variance_
+
+        sorted_eigenvalues = np.sort(eigenvalues)[::-1]
+
+        print("Valeurs propres :")
+        for i, val in enumerate(sorted_eigenvalues):
+            print(f"PC{i+1}: {val:.4f}")
+            
         # Find the 95% threshold index
         n_95 = np.argmax(cumvar >= 0.95) + 1
         

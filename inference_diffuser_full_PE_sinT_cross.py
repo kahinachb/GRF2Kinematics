@@ -12,7 +12,7 @@ import torch.nn as nn
 # ==========================================
 
 def predict_full_trial(model, ddpm, f_path, j_path, stats, device, 
-                       window_size=128, stride=64, inference_steps=50,n_samples=10):
+                       window_size=128, stride=64, inference_steps=50,n_samples=1):
     """
     Generate predictions for a full trial using sliding windows.
     
@@ -175,7 +175,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         data_root: Root directory containing processed data
         output_dir: Where to save results
     """
-    
+    output_dir = Path(output_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n{'='*60}")
     print(f"INFERENCE ON: {subject_name} / {trial_name}")
