@@ -37,7 +37,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
 
-    j_raw = j_raw[:, 6:18]
+    j_raw = j_raw[:, 7:19]
  
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -208,7 +208,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics_feet.npy"
+    f_path = data_path / "kinetics.npy"
     j_path = data_path / "all_joints.npy"
     
     if not f_path.exists():
@@ -289,19 +289,19 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "s1"     
-    # TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
+    SUBJECT_NAME = "s1"     
+    TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
 
-    SUBJECT_NAME = "Jeremy"     
-    TRIAL_NAME = "Trial111"           
+    # SUBJECT_NAME = "Jeremy"     
+    # TRIAL_NAME = "Trial111"           
           
     
-    MODEL_PATH = "./training_res/results_PE_sin_cross_real_selfs/diffusion_biomech_model_best.pth"
-    SCALERS_PATH = "./training_res/results_PE_sin_cross_real_selfs/scalers_concat.json"
-    DATA_ROOT = "./processed_data_feet"
-    # DATA_ROOT = "./DATA/synth_npy/"
+    MODEL_PATH = "./results_PE_sin_cross_syn_selfs/diffusion_biomech_model_best.pth"
+    SCALERS_PATH = "./results_PE_sin_cross_syn_selfs/scalers_concat.json"
+    # DATA_ROOT = "./processed_data_feet"
+    DATA_ROOT = "/datasets/GRF2Kine/synth_npy"
     OUTPUT_DIR = "./inference_results_PE_sin_cross_selfs_best"
-    
+    # 
     # ===== RUN INFERENCE =====
     run_inference(
         subject_name=SUBJECT_NAME,
