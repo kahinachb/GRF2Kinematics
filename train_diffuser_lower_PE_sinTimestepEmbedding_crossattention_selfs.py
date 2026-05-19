@@ -179,13 +179,29 @@ def run_experiment():
     results_dir.mkdir(parents=True, exist_ok=True)
     
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+
     task_subs = [s for s in subjects if "subject" in s.name.lower()]
     squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
-    random.seed(42); random.shuffle(task_subs); random.shuffle(squat_subs)
 
-    train_subs = task_subs[:11] + squat_subs[:4]
-    val_subs = task_subs[11:14] + squat_subs[4:5]
-    test_subs = task_subs[14:] + squat_subs[5:]
+    random.seed(42)
+    random.shuffle(task_subs)
+    random.shuffle(squat_subs)
+
+    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+        n = len(lst)
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
+
+        train = lst[:n_train]
+        val = lst[n_train:n_train + n_val]
+        test = lst[n_train + n_val:]
+        return train, val, test
+    task_train, task_val, task_test = split_list(task_subs, 0.7, 0.15)
+    squat_train, squat_val, squat_test = split_list(squat_subs, 0.7, 0.15)
+
+    train_subs = task_train + squat_train
+    val_subs   = task_val + squat_val
+    test_subs  = task_test + squat_test
 
     print(f"\n[SPLIT SUMMARY]")
     print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")

@@ -17,7 +17,7 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:19]
+            j_data = j_data[:, 6:18]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -39,7 +39,7 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:19]
+    j_cat= j_cat[:, 6:18]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -139,7 +139,7 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 7:19] # Focus bas du corps
+    j_raw = j_raw[:, 6:18] # Focus bas du corps
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -182,29 +182,35 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/synth_npy")
+    data_root = Path("/datasets/GRF2Kine/processed_data_feet")
 
-    results_dir = Path("results_FM")
+    results_dir = Path("results_FM_real")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    subjects = [d for d in data_root.iterdir() if d.is_dir()]
-    if len(subjects) > 1:
-        print("⚠️ Tu as plus d'un sujet")
-        print (subjects)
-        subject = subjects[0]
-        print(subject)
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
 
-    trials = sorted([t for t in subject.iterdir() if t.is_dir()])
-
-    print(f"Total trials: {len(trials)}")
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
 
     random.seed(42)
-    random.shuffle(trials)
+    random.shuffle(task_subs)
+    random.shuffle(squat_subs)
 
-    n = len(trials)
-    train_subs = trials[:int(0.7*n)]
-    val_subs   = trials[int(0.7*n):int(0.85*n)]
-    test_subs  = trials[int(0.85*n):]
+    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+        n = len(lst)
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
+
+        train = lst[:n_train]
+        val = lst[n_train:n_train + n_val]
+        test = lst[n_train + n_val:]
+        return train, val, test
+    task_train, task_val, task_test = split_list(task_subs, 0.7, 0.15)
+    squat_train, squat_val, squat_test = split_list(squat_subs, 0.7, 0.15)
+
+    train_subs = task_train + squat_train
+    val_subs   = task_val + squat_val
+    test_subs  = task_test + squat_test
 
     print(f"\n[SPLIT SUMMARY]")
     print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")
@@ -212,18 +218,18 @@ def run_experiment():
     print(f"TEST  ({len(test_subs)} sujets): {[s.name for s in test_subs]}")
     print(f"{'='*30}")
 
-    def get_pairs(trials):
-        pairs = []
-        
-        for t in trials:
-            if t.is_dir():
-                f = t / "kinetics.npy"
-                j = t / "all_joints.npy"
-
-                if f.exists() and j.exists():
-                    pairs.append((f, j))
-
-        return pairs
+    def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "kinetics_feet.npy"  
+                    j = t / "all_joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 
     train_pairs = get_pairs(train_subs)
