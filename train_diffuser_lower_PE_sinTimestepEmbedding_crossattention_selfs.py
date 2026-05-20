@@ -8,6 +8,7 @@ from pathlib import Path
 import random
 import json
 from utils.diffuser_utils import DDPM 
+from utils.utils import is_squat_task
 
 # ==========================================
 # 1. DATASET 
@@ -173,54 +174,96 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/processed_data_feet")
+    data_root = Path("processed_data_feet")
 
     results_dir = Path("results_PE_sin_cross_real_selfs")
     results_dir.mkdir(parents=True, exist_ok=True)
     
+    all_samples = []
+
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
 
-    task_subs = [s for s in subjects if "subject" in s.name.lower()]
-    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+    for subject_dir in subjects:
+
+        subject_name = subject_dir.name.lower()
+
+        task_dirs = [d for d in subject_dir.iterdir() if d.is_dir()]
+
+        for task_dir in task_dirs:
+
+            task_name = task_dir.name.lower()
+
+            if not is_squat_task(subject_name, task_name):
+                continue
+
+            kinetics_file = task_dir / "kinetics_feet.npy"
+            joints_file = task_dir / "all_joints.npy"
+
+            if kinetics_file.exists() and joints_file.exists():
+
+                all_samples.append({
+                    "subject": subject_name,
+                    "task": task_name,
+                    "kinetics": kinetics_file,
+                    "joints": joints_file
+                })
+
+
+    print(f"Nombre total de samples squat : {len(all_samples)}")
+    
+    unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
 
     random.seed(42)
-    random.shuffle(task_subs)
-    random.shuffle(squat_subs)
+    random.shuffle(unique_subjects)
+
 
     def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+
         n = len(lst)
+
         n_train = int(n * train_ratio)
         n_val = int(n * val_ratio)
 
         train = lst[:n_train]
         val = lst[n_train:n_train + n_val]
         test = lst[n_train + n_val:]
-        return train, val, test
-    task_train, task_val, task_test = split_list(task_subs, 0.7, 0.15)
-    squat_train, squat_val, squat_test = split_list(squat_subs, 0.7, 0.15)
 
-    train_subs = task_train + squat_train
-    val_subs   = task_val + squat_val
-    test_subs  = task_test + squat_test
+        return train, val, test
+
+
+    train_subjects, val_subjects, test_subjects = split_list(
+        unique_subjects,
+        train_ratio=0.7,
+        val_ratio=0.15
+    )
+
+
+    train_subs = [s for s in all_samples if s["subject"] in train_subjects]
+    val_subs = [s for s in all_samples if s["subject"] in val_subjects]
+    test_subs = [s for s in all_samples if s["subject"] in test_subjects]
 
     print(f"\n[SPLIT SUMMARY]")
-    print(f"TRAIN ({len(train_subs)} sujets): {[s.name for s in train_subs]}")
-    print(f"VAL   ({len(val_subs)} sujets): {[s.name for s in val_subs]}")
-    print(f"TEST  ({len(test_subs)} sujets): {[s.name for s in test_subs]}")
+    print(f"Train subjects : {len(train_subjects)}")
+    print(f"Train subjects   : {train_subjects}")
+    print(f"Val subjects   : {len(val_subjects)}")
+    print(f"Val subjects   : {val_subjects}")
+    print(f"Test subjects  : {len(test_subjects)}")
+    print(f"Test subjects   : {test_subjects}")
     print(f"{'='*30}")
 
-    def get_pairs(subs):
-        p = []
-        for s in subs:
-            # On parcourt chaque essai (task) dans le dossier du sujet
-            for t in s.iterdir():
-                if t.is_dir():
-                    f = t / "kinetics_feet.npy"  
-                    j = t / "all_joints.npy"
-                    # On vérifie que les deux fichiers existent bien
-                    if f.exists() and j.exists():
-                        p.append((f, j))
-        return p
+    def get_pairs(samples):
+
+        pairs = []
+
+        for s in samples:
+
+            f = s["kinetics"]
+            j = s["joints"]
+
+            if f.exists() and j.exists():
+                pairs.append((f, j))
+
+        return pairs
 
 
     train_pairs = get_pairs(train_subs)

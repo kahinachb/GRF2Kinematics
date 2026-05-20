@@ -5,6 +5,115 @@ import pandas as pd
 from utils.linear_algebra_utils import col_vector_3D, transform_to_global_frame,transform_to_local_frame
 import yaml
 from utils.model_utils import get_virtual_pelvis_pose
+import random
+
+manual_mapping = {
+    "vincent": {
+        "trial109": "hulahoop",
+        "trial110": "hulahoop",
+        "trial112": "squat",
+        "trial113": "baisser_haut"
+    },
+
+    "jovana": {
+        "trial108": "hulahoop",
+        "trial109": "hulahoop",
+        "trial110": "hulahoop",
+        "trial111": "squat",
+        "trial112": "baisser_haut"
+    },
+
+    "christine": {
+        "trial107": "hulahoop",
+        "trial108": "gauche_droit",
+        "trial109": "hulahoop",
+        "trial110": "squat",
+        "trial111": "baisser_haut"
+    },
+
+    "jeremy": {
+        "trial108": "hulahoop",
+        "trial109": "gauche_droit",
+        "trial110": "gauche_droit",
+        "trial111": "squat"
+    },
+
+    "maria": {
+        "trial108": "hulahoop",
+        "trial109": "hulahoop",
+        "trial112": "baisser_haut",
+        "trial114": "squat"
+    },
+
+    "serge": {
+        "trial108": "hulahoop",
+        "trial109": "hulahoop",
+        "trial110": "hulahoop",
+        "trial111": "squat"
+    },
+
+    "subject1": {
+        "trial108": "gauche_droit",
+        "trial109": "hulahoop",
+        "trial110": "hulahoop",
+        "trial111": "squat"
+    }
+}
+
+def is_squat_task(subject_name, task_name):
+    task_lower = task_name.lower()
+
+    if "squat" in task_lower:
+        return True
+
+    if subject_name in manual_mapping:
+        mapped_name = manual_mapping[subject_name].get(task_name)
+
+        if mapped_name is not None:
+            return mapped_name == "squat"
+
+    return False
+
+
+def split(data_root):
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+
+    task_subs = [s for s in subjects if "subject" in s.name.lower()]
+    squat_subs = [s for s in subjects if "subject" not in s.name.lower()]
+
+    random.seed(42)
+    random.shuffle(task_subs)
+    random.shuffle(squat_subs)
+
+    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+        n = len(lst)
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
+
+        train = lst[:n_train]
+        val = lst[n_train:n_train + n_val]
+        test = lst[n_train + n_val:]
+        return train, val, test
+    task_train, task_val, task_test = split_list(task_subs, 0.7, 0.15)
+    squat_train, squat_val, squat_test = split_list(squat_subs, 0.7, 0.15)
+
+    train_subs = task_train + squat_train
+    val_subs   = task_val + squat_val
+    test_subs  = task_test + squat_test
+    return train_subs,val_subs,test_subs
+
+def get_pairs(subs):
+        p = []
+        for s in subs:
+            # On parcourt chaque essai (task) dans le dossier du sujet
+            for t in s.iterdir():
+                if t.is_dir():
+                    f = t / "kinetics_feet.npy"  
+                    j = t / "all_joints.npy"
+                    # On vérifie que les deux fichiers existent bien
+                    if f.exists() and j.exists():
+                        p.append((f, j))
+        return p
 
 def read_weight(yaml_file):
     """
