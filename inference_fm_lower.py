@@ -36,7 +36,7 @@ def predict_full_trial(model, f_path, j_path, stats, device,
     j_raw = np.load(j_path).astype(np.float32)
 
     # Focus unique sur les 12 DOFs du bas du corps
-    j_raw = j_raw[:, 7:19]
+    j_raw = j_raw[:, 6:18]
  
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -190,7 +190,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # ===== 3. LOCATE DATA FILES =====
     print("\n[3/4] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
-    f_path = data_path / "kinetics.npy"
+    f_path = data_path / "kinetics_feet.npy"
     j_path = data_path / "all_joints.npy"
     
     if not f_path.exists(): raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -260,13 +260,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
 if __name__ == "__main__":
     
-    SUBJECT_NAME = "s1"     
-    TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
+    SUBJECT_NAME = "Christine"     
+    TRIAL_NAME = "Trial110"     
 
-    MODEL_PATH = "./results_FM/cfm_best_model.pth"
-    SCALERS_PATH = "./results_FM/scalers_concat.json"
-    DATA_ROOT = "/datasets/GRF2Kine/synth_npy"
-    OUTPUT_DIR = "./inference_results_CFM"
+    MODEL_PATH = "./results_FM_real/cfm_best_model.pth"
+    SCALERS_PATH = "./results_FM_real/scalers_concat.json"
+    DATA_ROOT = "processed_data_feet"
+    OUTPUT_DIR = "./inference_results_CFM_real"
     
     run_inference(
         subject_name=SUBJECT_NAME,

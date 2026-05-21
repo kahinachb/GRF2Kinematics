@@ -17,31 +17,29 @@ import numpy as np
 import imageio.v2 as imageio
 
 
-subject = 'Jeremy'
+subject = 'Kahina'
 
-task = 'Trial111'
-which = 'Vinc'
+task = 'squat'
+which = 'HUMANOIDS'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided/Jeremy_Trial111_prediction.csv"
-path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/Kahina_squat_cfm_prediction.csv"
+path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
 
 # path_joint_pred= '/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv'
 # path_joint= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
 q_ref_df_pred = pd.read_csv(path_joint_pred)#.iloc[:,:19]
 
-dofs = [
-    "FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
-    "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
-    "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
-    "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
-    "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
-]
+dofs = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+"left_hip_Z",  "left_hip_X",  "left_hip_Y",
+"left_knee_Z", "left_ankle_Z", "left_ankle_X",
+"right_hip_Z", "right_hip_X", "right_hip_Y",
+"right_knee_Z", "right_ankle_Z", "right_ankle_X",]
 
 q_ref_df = pd.read_csv(path_joint, usecols=dofs).iloc[1:,:]
 
@@ -64,6 +62,12 @@ desired_order_ref = [
     "Rknee_flex_ext",
     "Rankle_flex_ext","Rankle_abd_add"
 ]
+
+desired_order_ref = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+"left_hip_Z",  "left_hip_X",  "left_hip_Y",
+"left_knee_Z", "left_ankle_Z", "left_ankle_X",
+"right_hip_Z", "right_hip_X", "right_hip_Y",
+"right_knee_Z", "right_ankle_Z", "right_ankle_X",]
 
 desired_order_pred = [
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
@@ -200,12 +204,12 @@ for i in range(len(q_ref)):
 
     viz_human.display(q_ref[i])
     viz_human_pred.display(q_pred_full)
-#     images.append(viewer.get_image())
+    images.append(viewer.get_image())
 
     
-# video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided_0.1/out_guided_selfs.mp4"
-# imageio.mimsave(video_path, images, fps=fps, codec='libx264')
-# print(f"[MeshCat] Video saved to: {video_path}")
+video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/out.mp4"
+imageio.mimsave(video_path, images, fps=fps, codec='libx264')
+print(f"[MeshCat] Video saved to: {video_path}")
 
 
 

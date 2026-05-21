@@ -9,41 +9,50 @@ import random
 import json
 from utils.utils import is_squat_task
 import re
+import yaml
 # ==========================================
 # 1. DATASET 
 # ==========================================
 class BiomechDiffusionDataset(Dataset):
     def __init__(self, file_list, window_size=128, stats=None):
         self.samples = []
-        for f_path, j_path in file_list:
+        for f_path, j_path, weight in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
             j_data = j_data[:, 6:18]
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
-                self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
+                self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size], weight))
         self.stats = stats
 
     def __len__(self): return len(self.samples)
 
     def __getitem__(self, idx):
-        f, j = self.samples[idx]
+        f, j, w = self.samples[idx]
         f, j = torch.from_numpy(f), torch.from_numpy(j)
+        w = torch.tensor([w], dtype=torch.float32)
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
             j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
-        return f, j
+            w = (w - self.stats['w_m']) / (self.stats['w_s'] + 1e-6)
+
+        return f, j, w
 
 def compute_and_save_stats(file_list, save_path):
     print("\n[INFO] Calcul des scalers sur le Train Set...")
-    all_f, all_j = [], []
-    for f_p, j_p in file_list:
+    all_f, all_j, all_w = [], [], []
+
+    for f_p, j_p, w in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
+        all_w.append(w)
+    w_arr = np.array(all_w)
+
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
     j_cat= j_cat[:, 6:18]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
-        'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0)
+        'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0),
+        'w_m': w_arr.mean(),       'w_s': w_arr.std()
     }
     serializable_stats = {k: v.tolist() for k, v in stats.items()}
     with open(save_path, 'w') as f:
@@ -91,6 +100,12 @@ class DiffusionTransformer(nn.Module):
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
         
+        self.weight_embed = nn.Sequential(
+            nn.Linear(1, embed_dim),
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbeddings(embed_dim),
             nn.Linear(embed_dim, embed_dim),
@@ -106,7 +121,7 @@ class DiffusionTransformer(nn.Module):
         
         self.output_layer = nn.Linear(embed_dim, joint_dim)
 
-    def forward(self, x, t, cond):
+    def forward(self, x, t, cond,weight):
 
         if isinstance(t, (int, float)):
             t = torch.tensor([t], device=x.device, dtype=torch.float32).expand(x.shape[0])
@@ -115,19 +130,25 @@ class DiffusionTransformer(nn.Module):
             
         # Optionnel mais recommandé : On "étire" t pour l'embedding sinusoidal
         t_input = t * 1000.0
-        # 2. Process Time Embedding
+        # Process Time Embedding
         t_emb = self.time_mlp(t_input).unsqueeze(1) 
         
         # 3. Process Target Sequence (Noisy Joints + Time + Position)
         x_emb = self.joint_embed(x) + t_emb 
         x_emb = self.pos_encoder(x_emb) 
         
-        # 4. Process Memory Sequence (Forces + Position)
+        # Process Memory Sequence (Forces + Position)
         # Note: Time-series forces also need positional awareness!
-        cond_emb = self.force_embed(cond)
-        cond_emb = self.pos_encoder(cond_emb)
+        #Process weight and add it to forces <---
+        cond_emb = self.force_embed(cond)          # Shape: [Batch, SeqLen, EmbedDim]
+        w_emb = self.weight_embed(weight)          # Shape: [Batch, EmbedDim]
+        w_emb = w_emb.unsqueeze(1)                 # Shape: [Batch, 1, EmbedDim]
         
-        # 5. Transformer Decoder (tgt=Joints, memory=Forces)
+        # Broadcasting adds the subject's weight embedding to every frame
+        cond_emb = cond_emb + w_emb 
+        cond_emb = self.pos_encoder(cond_emb)
+
+        # Transformer Decoder (tgt=Joints, memory=Forces)
         out = self.transformer(tgt=x_emb, memory=cond_emb)
         
         return self.output_layer(out)
@@ -135,12 +156,16 @@ class DiffusionTransformer(nn.Module):
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
-def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, steps=25):
+def predict_full_trial(model, f_path, j_path,weight, stats, device, window_size=128, stride=64, steps=25):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
     j_raw = j_raw[:, 6:18] # Focus bas du corps
-  
+
+    # ---> ADDED: Format weight for inference <---
+    w_norm = (weight - stats['w_m'].item()) / (stats['w_s'].item() + 1e-6)
+    w_tensor = torch.tensor([[w_norm]], dtype=torch.float32).to(device)
+
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
     T = f_norm.shape[0]
@@ -165,7 +190,7 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
             
             with torch.no_grad():
                 # Le modèle prédit la vitesse (v)
-                v = model(curr_x, t, f_win)
+                v = model(curr_x, t, f_win, w_tensor)
                 
             # x_{t+dt} = x_t + v * dt
             curr_x = curr_x + v * dt
@@ -184,25 +209,39 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/datasets/GRF2Kine/processed_data_feet_HUM")
 
-    results_dir = Path("results_FM_HUM")
+    results_dir = Path("results_FM_HUM_weight")
     results_dir.mkdir(parents=True, exist_ok=True)
+
     
     all_samples = []
 
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
 
     for subject_dir in subjects:
-
         subject_name = subject_dir.name.lower()
-
-        # retire les chiffres à la fin
         canonical_subject = re.sub(r'\d+$', '', subject_name)
         print(canonical_subject)
 
+        # ---> ADDED: Extract weight from YAML <---
+        weight = 70.0 # Fallback in case a file is missing
+        
+        # Look for any .yaml or .yml file in the subject directory
+        yaml_files = list(subject_dir.glob("*.yaml")) + list(subject_dir.glob("*.yml"))
+        
+        if yaml_files:
+            try:
+                with open(yaml_files[0], 'r') as f:
+                    yaml_data = yaml.safe_load(f)
+                    if 'weight_kg' in yaml_data:
+                        weight = float(yaml_data['weight_kg'])
+            except Exception as e:
+                print(f"  [WARNING] Could not read weight for {subject_name}: {e}")
+        else:
+            print(f"  [WARNING] No YAML found for {subject_name}, using default 70.0 kg")
+            
         task_dirs = [d for d in subject_dir.iterdir() if d.is_dir()]
 
         for task_dir in task_dirs:
-
             task_name = task_dir.name.lower()
 
             if not is_squat_task(subject_name, task_name):
@@ -212,13 +251,13 @@ def run_experiment():
             joints_file = task_dir / "all_joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():
-
                 all_samples.append({
                     "subject": subject_name,
                     "canonical_subject": canonical_subject,
                     "task": task_name,
                     "kinetics": kinetics_file,
-                    "joints": joints_file
+                    "joints": joints_file,
+                    "weight": weight  # <--- Passes the dynamically loaded weight
                 })
 
     print(f"Nombre total de samples squat : {len(all_samples)}")
@@ -271,15 +310,16 @@ def run_experiment():
 
             f = s["kinetics"]
             j = s["joints"]
-
+            w = s["weight"]
             if f.exists() and j.exists():
-                pairs.append((f, j))
+                pairs.append((f, j,w))
 
         return pairs
 
 
     train_pairs = get_pairs(train_subs)
     print("train_pairs", train_pairs)
+
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
@@ -297,8 +337,8 @@ def run_experiment():
     for epoch in range(epochs):
         model.train()
         t_epoch_loss = 0
-        for f, j in train_loader:
-            f, j = f.to(device), j.to(device) # j est x_1 (target)
+        for f, j,w in train_loader:
+            f, j,w  = f.to(device), j.to(device), w.to(device) # j est x_1 (target)
             
             # 1. CFM Sampling: t ~ U(0, 1)
             t = torch.rand((j.shape[0],), device=device)
@@ -312,7 +352,7 @@ def run_experiment():
             target_v = j - x_0
             
             optimizer.zero_grad()
-            pred_v = model(x_t, t, f)
+            pred_v = model(x_t, t, f, w)
             
             loss = nn.MSELoss()(pred_v, target_v)
             loss.backward()
@@ -324,15 +364,15 @@ def run_experiment():
         model.eval()
         v_epoch_loss = 0
         with torch.no_grad():
-            for f, j in val_loader:
-                f, j = f.to(device), j.to(device)
+            for f, j, w in val_loader:
+                f, j, w = f.to(device), j.to(device), w.to(device)
                 t = torch.rand((j.shape[0],), device=device)
                 t_view = t.view(-1, 1, 1)
                 x_0 = torch.randn_like(j)
                 x_t = (1 - t_view) * x_0 + t_view * j
                 target_v = j - x_0
                 
-                pred_v = model(x_t, t, f)
+                pred_v = model(x_t, t, f, w)
                 v_epoch_loss += nn.MSELoss()(pred_v, target_v).item()
         
         avg_train = t_epoch_loss / len(train_loader)
@@ -353,12 +393,12 @@ def run_experiment():
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     
-    ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, steps=25)
+    ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], random_trial[2], stats, device, steps=25)
 
     fig, axes = plt.subplots(4, 3, figsize=(18, 14))
     for i, ax in enumerate(axes.flatten()):
         ax.plot(ref_full[:, i], 'k--', alpha=0.6, label='Reference')
-        ax.plot(pred_full[:, i], 'r', label='DDPM Pred')
+        ax.plot(pred_full[:, i], 'r', label='CFM Pred')
         ax.set_title(f"Joint {i+1}")
         if i == 0: ax.legend()
     plt.suptitle(f"Full Trial FM Inference: {random_trial[0].parent.name}", fontsize=16)

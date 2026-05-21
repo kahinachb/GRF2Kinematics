@@ -1,14 +1,15 @@
 import numpy as np
 import csv
 
-input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided/Jeremy_Trial111_prediction.npy"
-output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_selfs_best_guided/Jeremy_Trial111_prediction.csv"
+input_npy = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_real_selfs/Kahina_squat_prediction.npy"
+output_csv = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_real_selfs/Kahina_squat_prediction.csv"
 
 data = np.load(input_npy)   # shape (N, 2)
 
 with open(output_csv, mode="w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow([#"FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw", 
+        #"delta_x","delta_y","delta_z","delta_rx","delta_ry","delta_rz",
         "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
     "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
     "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
