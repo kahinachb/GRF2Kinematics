@@ -218,7 +218,7 @@ def run_experiment():
     else : 
         dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
         res = "results_FM_HUM_weight_seg"
-    data_root = Path(f"{dataset}")
+    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
