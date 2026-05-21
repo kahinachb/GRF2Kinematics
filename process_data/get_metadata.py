@@ -130,6 +130,145 @@ def extract_weight_from_forces(forces_file):
     
     return weight_N, weight_kg
 
+def get_marker_position(row, marker_name):
+    """
+    Extract 3D marker position from dataframe row.
+    
+    Parameters
+    ----------
+    row : pandas.Series
+        Row of dataframe
+    marker_name : str
+        Marker base name (without _X/_Y/_Z)
+
+    Returns
+    -------
+    np.array shape (3,)
+    """
+    return np.array([
+        row[f"{marker_name}_X"],
+        row[f"{marker_name}_Y"],
+        row[f"{marker_name}_Z"]
+    ])
+
+
+def distance_3d(p1, p2):
+    return np.linalg.norm(p1 - p2)
+
+
+def extract_lower_body_segment_lengths(markers_file):
+    """
+    Compute lower-body segment lengths from marker data.
+
+    Parameters
+    ----------
+    markers_file : str
+        Path to markers CSV file
+
+    Returns
+    -------
+    dict
+        Segment lengths in mm
+    """
+
+    df = pd.read_csv(markers_file)
+
+    # Use first frame
+    row = df.iloc[0]
+
+    lengths = {}
+
+    # ---------------------------------------------------
+    # Detect marker naming convention automatically
+    # ---------------------------------------------------
+
+    cols = df.columns
+
+    # ===== Pelvis markers =====
+    if "LASI_X" in cols:
+        LASI = get_marker_position(row, "LASI")
+        RASI = get_marker_position(row, "RASI")
+        LPSI = get_marker_position(row, "LPSI")
+        RPSI = get_marker_position(row, "RPSI")
+    else:
+        LASI = get_marker_position(row, "LIAS")
+        RASI = get_marker_position(row, "RIAS")
+        LPSI = get_marker_position(row, "LIPS")
+        RPSI = get_marker_position(row, "RIPS")
+
+    # Pelvis width
+    lengths["pelvis_width_mm"] = distance_3d(LASI, RASI)
+
+    # ---------------------------------------------------
+    # LEFT LEG
+    # ---------------------------------------------------
+
+    if "LKNE_X" in cols:
+        LKNE = get_marker_position(row, "LKNE")
+        LANK = get_marker_position(row, "LANK")
+        LTOE = get_marker_position(row, "LTOE")
+        LHEE = get_marker_position(row, "LHEE")
+    else:
+        # Approximation using lateral markers
+        LKNE = (
+            get_marker_position(row, "LFLE") +
+            get_marker_position(row, "LFME")
+        ) / 2
+
+        LANK = (
+            get_marker_position(row, "LFAL") +
+            get_marker_position(row, "LTAM")
+        ) / 2
+
+        LTOE = get_marker_position(row, "LFM1")
+        LHEE = get_marker_position(row, "LFCC")
+
+    # Hip center approximation
+    LHIP = (LASI + LPSI) / 2
+
+    lengths["left_femur_mm"] = distance_3d(LHIP, LKNE)
+    lengths["left_tibia_mm"] = distance_3d(LKNE, LANK)
+    lengths["left_foot_mm"] = distance_3d(LHEE, LTOE)
+
+    # ---------------------------------------------------
+    # RIGHT LEG
+    # ---------------------------------------------------
+
+    if "RKNE_X" in cols:
+        RKNE = get_marker_position(row, "RKNE")
+        RANK = get_marker_position(row, "RANK")
+        RTOE = get_marker_position(row, "RTOE")
+        RHEE = get_marker_position(row, "RHEE")
+    else:
+        RKNE = (
+            get_marker_position(row, "RFLE") +
+            get_marker_position(row, "RFME")
+        ) / 2
+
+        RANK = (
+            get_marker_position(row, "RFAL") +
+            get_marker_position(row, "RTAM")
+        ) / 2
+
+        RTOE = get_marker_position(row, "RFM1")
+        RHEE = get_marker_position(row, "RFCC")
+
+    RHIP = (RASI + RPSI) / 2
+
+    lengths["right_femur_mm"] = distance_3d(RHIP, RKNE)
+    lengths["right_tibia_mm"] = distance_3d(RKNE, RANK)
+    lengths["right_foot_mm"] = distance_3d(RHEE, RTOE)
+
+    # ---------------------------------------------------
+    # Print results
+    # ---------------------------------------------------
+
+    print("\n--- Segment Lengths ---")
+
+    for k, v in lengths.items():
+        print(f"{k}: {v:.2f} mm")
+
+    return lengths
 
 def main(markers_file, forces_file, subject, output_dir=None):
     """
@@ -154,7 +293,11 @@ def main(markers_file, forces_file, subject, output_dir=None):
     
     print("\n--- Extracting Weight ---")
     weight_N, weight_kg = extract_weight_from_forces(forces_file)
-    
+    print("\n--- Extracting Segment Lengths ---")
+    segment_lengths = extract_lower_body_segment_lengths(markers_file)
+    segment_lengths = {
+    k: float(v) for k, v in segment_lengths.items()
+}
     # Convert height to meters if it appears to be in millimeters
     # height_m = height / 1000 if height > 100 else height
     
@@ -170,15 +313,16 @@ def main(markers_file, forces_file, subject, output_dir=None):
         # 'height_mm': float(height),
         # 'height_m': float(height_m),
         'weight_N': float(weight_N),
-        'weight_kg': float(weight_kg)
+        'weight_kg': float(weight_kg),
+        **segment_lengths
     }
     
     # Determine output directory
     if output_dir is None:
-        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/{subject}"
+        output_dir = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_feet/{subject}"
     
     # Create output path for subject.yaml
-    yaml_path = os.path.join(output_dir, f'{subject}_attelle_poids.yaml')
+    yaml_path = os.path.join(output_dir, f'{subject}.yaml')
     print(yaml_path)
     # Save results to YAML file
     with open(yaml_path, 'w') as f:
@@ -193,21 +337,28 @@ if __name__ == "__main__":
     # subjects = ["subject01", "subject02", "subject03","subject04", "subject05", "subject06","subject07", "subject08", "subject09",
     #             "subject10", "subject11", "subject12", "subject13", "subject14", "subject15", "subject16"]
     
-    subjects = ['Kahina', 'Laure', 'Marie', 'Maxime', 'Mohamed', 'Thanh', 'Thomas', 'Zoe', 'Zoe02', 'Kahina02',
-            'Laure02', 'Marie02', 'Maxime02', 'Mohamed02', 'Thanh02']
+    # subjects = ['Kahina', 'Laure', 'Marie', 'Maxime', 'Mohamed', 'Thanh', 'Thomas', 'Zoe', 'Zoe02', 'Kahina02',
+    #         'Laure02', 'Marie02', 'Maxime02', 'Mohamed02', 'Thanh02']
     
     # subjects = ['Kahina_6kg', 'Laure_6kg', 'Marie_6kg', 'Maxime_6kg', 'Mohamed_6kg', 'Thanh_6kg', 'Thomas_6kg', 'Zoe_6kg', 
     #             'Zoe02_6kg', 'Kahina02_6kg',
-    #         'Laure02_6kg', 'Marie02_6kg', 'Maxime02_6kg', 'Mohamed02_6kg', 'Thanh02_6kg',
+    #         'Laure02_6kg', 'Marie02_6kg', 'Maxime02_6kg', 'Mohamed02_6kg', 'Thanh02_6kg','Maxime_6kg', #maxime _6kg a squat_attelle_6kg
     #         'Maxime_8kg','Mohamed_8kg','Thomas_8kg']
     
-    task ="squat_attelle_poids" 
+    subjects = ["Christine","Vincent","Jeremy", "Jovana", "Maria","Serge","Subject1"]
 
-    # subjects = ["Christine","Vincent","Jeremy", "Jovana", "Maria","Serge","Subject1"]
+    task ="Trial109" 
+    which = "Vinc"
+
     for subject in subjects:
-        markers_file = f"DATA/HUMANOIDS/{subject}/{task}_markers.csv"
-        forces_file = f"DATA/HUMANOIDS/{subject}/{task}_kinetics_global.csv"
-        
+        if which == "Vinc":
+
+            markers_file = f"DATA/{which}/{subject}/{task}_filled.csv"
+            forces_file = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+        if which == "HUMANOIDS":
+            markers_file = f"DATA/{which}/{subject}/{task}_markers.csv"
+            forces_file = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+
     # Run the extraction
     # Output will be saved as subject.yaml in the same directory as markers_file
         try:

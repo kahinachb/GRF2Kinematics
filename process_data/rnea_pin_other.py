@@ -357,7 +357,7 @@ def process_subject_trial(subject, trial_num):
     # fig1.savefig(out1, dpi=150, bbox_inches='tight')
     # plt.close(fig1)
     # print(f"  Saved: {out1}")
-    # plt.show()
+    plt.show()
 
     rmse_f = compute_rmse(rnea_forces_pelvis,  pf_forces_pelvis)
     rmse_m = compute_rmse(rnea_moments_pelvis, pf_moments_pelvis)
@@ -386,7 +386,7 @@ def process_subject_trial(subject, trial_num):
     # fig1.savefig(out1, dpi=150, bbox_inches='tight')
     # plt.close(fig1)
     # print(f"  Saved: {out1}")
-    # plt.show()
+    plt.show()
 
 
     n_dofs     = 12
@@ -429,7 +429,7 @@ def process_subject_trial(subject, trial_num):
     # fig2.savefig(out2, dpi=150, bbox_inches='tight')
     # plt.close(fig2)
     # print(f"  Saved: {out2}")
-    # plt.show()
+    plt.show()
 
     save_dir = os.path.join(BASE_DATA_DIR, subject, trial_id)
     os.makedirs(save_dir, exist_ok=True)
@@ -496,10 +496,10 @@ def process_subject_trial(subject, trial_num):
     # "delta_ry",
     # "delta_rz"
     # ] + joint_names[7:]
-    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
-    joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
-    joints_filtered_df.to_csv(joints_file, index=False)
-    print(f"  Saved filtered joints: {joints_file}")
+    # joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
+    # joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
+    # joints_filtered_df.to_csv(joints_file, index=False)
+    # print(f"  Saved filtered joints: {joints_file}")
 
 
 
@@ -514,11 +514,14 @@ subjects = sorted([
 print(f"Sujets trouvés : {subjects}")
 
 for subject in subjects:
-    subject_dir  = os.path.join(BASE_DATA_DIR, subject)
-    trial_nums   = discover_trials(subject_dir)
-    print(f"\n{subject} — trials trouvés : {[f'Trial{n}' for n in trial_nums]}")
-    for trial_num in trial_nums:
-        try:
-            process_subject_trial(subject, trial_num)
-        except Exception as e:
-            print(f"  [ERROR] {subject}/Trial{trial_num} : {e}")
+    if subject == 'Jeremy':
+        subject_dir  = os.path.join(BASE_DATA_DIR, subject)
+        trial_nums   = discover_trials(subject_dir)
+        print(f"\n{subject} — trials trouvés : {[f'Trial{n}' for n in trial_nums]}")
+        for trial_num in trial_nums:
+            try:
+                process_subject_trial(subject, trial_num)
+            except Exception as e:
+                print(f"  [ERROR] {subject}/Trial{trial_num} : {e}")
+    else:
+        continue

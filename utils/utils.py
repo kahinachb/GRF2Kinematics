@@ -74,6 +74,21 @@ def is_squat_task(subject_name, task_name):
 
     return False
 
+def is_squat_task_only(subject_name, task_name):
+    task_lower = task_name.lower()
+
+    if task_lower == "squat":
+        return True
+
+    if subject_name in manual_mapping:
+        mapped_name = manual_mapping[subject_name].get(task_name)
+
+        if mapped_name is not None:
+            return mapped_name == "squat"
+
+    return False
+
+
 
 def split(data_root):
     subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])

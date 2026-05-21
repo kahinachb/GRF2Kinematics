@@ -7,11 +7,12 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
-from utils.utils import is_squat_task,is_squat_task_only
-import re
 import yaml
+from utils.utils import is_squat_task, is_squat_task_only
+import re
 
 squat = False
+
 # ==========================================
 # 1. DATASET 
 # ==========================================
@@ -29,32 +30,33 @@ class BiomechDiffusionDataset(Dataset):
     def __len__(self): return len(self.samples)
 
     def __getitem__(self, idx):
-        f, j, w = self.samples[idx]
+        f, j, a = self.samples[idx]
         f, j = torch.from_numpy(f), torch.from_numpy(j)
-        w = torch.tensor([w], dtype=torch.float32)
+        a = torch.tensor(a, dtype=torch.float32)
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
             j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
-            w = (w - self.stats['w_m']) / (self.stats['w_s'] + 1e-6)
+            a = (a - self.stats['a_m']) / (self.stats['a_s'] + 1e-6)
 
-        return f, j, w
+        return f, j, a
 
 def compute_and_save_stats(file_list, save_path):
     print("\n[INFO] Calcul des scalers sur le Train Set...")
-    all_f, all_j, all_w = [], [], []
+    all_f, all_j, all_a = [], [], []
 
-    for f_p, j_p, w in file_list:
+    for f_p, j_p, a in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
-        all_w.append(w)
-    w_arr = np.array(all_w)
+        all_a.append(a)
+    
 
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
     j_cat= j_cat[:, 6:18]
+    a_cat = np.vstack(all_a)
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
         'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0),
-        'w_m': w_arr.mean(),       'w_s': w_arr.std()
+        'a_m': a_cat.mean(axis=0), 'a_s': a_cat.std(axis=0)
     }
     serializable_stats = {k: v.tolist() for k, v in stats.items()}
     with open(save_path, 'w') as f:
@@ -102,8 +104,8 @@ class DiffusionTransformer(nn.Module):
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
         
-        self.weight_embed = nn.Sequential(
-            nn.Linear(1, embed_dim),
+        self.anthro_embed = nn.Sequential(
+            nn.Linear(8, embed_dim), 
             nn.SiLU(),
             nn.Linear(embed_dim, embed_dim)
         )
@@ -143,11 +145,11 @@ class DiffusionTransformer(nn.Module):
         # Note: Time-series forces also need positional awareness!
         #Process weight and add it to forces <---
         cond_emb = self.force_embed(cond)          # Shape: [Batch, SeqLen, EmbedDim]
-        w_emb = self.weight_embed(weight)          # Shape: [Batch, EmbedDim]
-        w_emb = w_emb.unsqueeze(1)                 # Shape: [Batch, 1, EmbedDim]
+        a_emb = self.anthro_embed(weight)          # Shape: [Batch, EmbedDim]
+        a_emb = a_emb.unsqueeze(1)                 # Shape: [Batch, 1, EmbedDim]
         
         # Broadcasting adds the subject's weight embedding to every frame
-        cond_emb = cond_emb + w_emb 
+        cond_emb = cond_emb + a_emb 
         cond_emb = self.pos_encoder(cond_emb)
 
         # Transformer Decoder (tgt=Joints, memory=Forces)
@@ -165,8 +167,9 @@ def predict_full_trial(model, f_path, j_path,weight, stats, device, window_size=
     j_raw = j_raw[:, 6:18] # Focus bas du corps
 
     # ---> ADDED: Format weight for inference <---
-    w_norm = (weight - stats['w_m'].item()) / (stats['w_s'].item() + 1e-6)
-    w_tensor = torch.tensor([[w_norm]], dtype=torch.float32).to(device)
+    a_tensor = torch.tensor(weight, dtype=torch.float32) # 'weight' here is the 8D list from your random_trial
+    a_norm = (a_tensor - stats['a_m']) / (stats['a_s'] + 1e-6)
+    w_tensor = a_norm.unsqueeze(0).to(device) # Adds batch dimension: shape becomes [1, 8]
 
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -211,16 +214,14 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if squat == True :
         dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
-        res = "results_FM_S_weight"
+        res = "results_FM_S_weight_seg"
     else : 
         dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
-        res = "results_FM_HUM_weight"
-
-    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+        res = "results_FM_HUM_weight_seg"
+    data_root = Path(f"{dataset}")
 
     print("squat", squat)
     print(dataset)
-
     results_dir = Path(f"{res}")
     results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -240,22 +241,30 @@ def run_experiment():
         # Look for any .yaml or .yml file in the subject directory
         yaml_files = list(subject_dir.glob("*.yaml")) + list(subject_dir.glob("*.yml"))
         
+        anthro_data = [70.0, 250.0, 450.0, 400.0, 200.0, 450.0, 400.0, 200.0] 
+        
         if yaml_files:
             try:
                 with open(yaml_files[0], 'r') as f:
-                    yaml_data = yaml.safe_load(f)
-                    if 'weight_kg' in yaml_data:
-                        weight = float(yaml_data['weight_kg'])
+                    yd = yaml.safe_load(f)
+                    if 'weight_kg' in yd:
+                        anthro_data = [
+                            float(yd['weight_kg']),
+                            float(yd['pelvis_width_mm']),
+                            float(yd['left_femur_mm']),
+                            float(yd['left_tibia_mm']),
+                            float(yd['left_foot_mm']),
+                            float(yd['right_femur_mm']),
+                            float(yd['right_tibia_mm']),
+                            float(yd['right_foot_mm'])
+                        ]
             except Exception as e:
-                print(f"  [WARNING] Could not read weight for {subject_name}: {e}")
-        else:
-            print(f"  [WARNING] No YAML found for {subject_name}, using default 70.0 kg")
+                print(f"  [WARNING] Could not read anthro data for {subject_name}: {e}")
             
         task_dirs = [d for d in subject_dir.iterdir() if d.is_dir()]
 
         for task_dir in task_dirs:
             task_name = task_dir.name.lower()
-
             if squat == True:
                 if not is_squat_task_only(subject_name, task_name):
                     continue
@@ -273,7 +282,7 @@ def run_experiment():
                     "task": task_name,
                     "kinetics": kinetics_file,
                     "joints": joints_file,
-                    "weight": weight  # <--- Passes the dynamically loaded weight
+                    "anchor": anthro_data  # <--- Passes the dynamically loaded weight
                 })
 
     print(f"Nombre total de samples squat : {len(all_samples)}")
@@ -326,7 +335,7 @@ def run_experiment():
 
             f = s["kinetics"]
             j = s["joints"]
-            w = s["weight"]
+            w = s["anchor"]
             if f.exists() and j.exists():
                 pairs.append((f, j,w))
 

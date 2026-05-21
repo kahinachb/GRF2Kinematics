@@ -7,8 +7,10 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
-from utils.utils import is_squat_task
+from utils.utils import is_squat_task, is_squat_task_only
 import re
+
+squat = False
 # ==========================================
 # 1. DATASET 
 # ==========================================
@@ -182,9 +184,19 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/processed_data_feet_HUM")
+    if squat == True :
+        dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
+        res = "results_FM_S"
+    else : 
+        dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
+        res = "results_FM_HUM"
 
-    results_dir = Path("results_FM_HUM")
+    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+
+    print("squat", squat)
+    print(dataset)
+
+    results_dir = Path(f"{res}")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -204,9 +216,12 @@ def run_experiment():
         for task_dir in task_dirs:
 
             task_name = task_dir.name.lower()
-
-            if not is_squat_task(subject_name, task_name):
-                continue
+            if squat == True:
+                if not is_squat_task_only(subject_name, task_name):
+                    continue
+            else : 
+                if not is_squat_task(subject_name, task_name):
+                    continue
 
             kinetics_file = task_dir / "kinetics_feet.npy"
             joints_file = task_dir / "all_joints.npy"
@@ -366,7 +381,7 @@ def run_experiment():
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
     plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
-    print(f"\n[FINISH] Résultats sauvegardés.")
+    print(f"\n[FINISH] Résultats sauvegardés. {results_dir}")
 
 if __name__ == "__main__":
     run_experiment()

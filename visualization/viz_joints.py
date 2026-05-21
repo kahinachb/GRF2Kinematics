@@ -20,14 +20,14 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'Subject1'
+subject = 'Kahina'
 
-task = 'Trial111'
-which = 'Vinc'
+task = 'squat_attelle'
+which = 'HUMANOIDS'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
@@ -279,50 +279,50 @@ for i in range(len(q_ref)):
     # cop_z = 0.0
     # cop_rnea = np.array([cop_x, cop_y, cop_z])
    
-    # cop_r = cop1[i]  # (x,y,z)
-    # cop_l = cop2[i]
+    cop_r = cop1[i]  # (x,y,z)
+    cop_l = cop2[i]
 
-    # if which == 'HUMANOIDS' or which=='Anais' or which=='Vinc': 
-    #     Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
-    #     Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
+    if which == 'HUMANOIDS' or which=='Anais' or which=='Vinc': 
+        Fz_r = df_cop[find_col(df_cop, "Fz1_glob")].values.astype(float)
+        Fz_l = df_cop[find_col(df_cop, "Fz2_glob")].values.astype(float)
 
-    #     Fx_r = df_cop[find_col(df_cop, "Fx1_glob")].values.astype(float)
-    #     Fx_l = df_cop[find_col(df_cop, "Fx2_glob")].values.astype(float)
+        Fx_r = df_cop[find_col(df_cop, "Fx1_glob")].values.astype(float)
+        Fx_l = df_cop[find_col(df_cop, "Fx2_glob")].values.astype(float)
 
-    #     Fy_r = df_cop[find_col(df_cop, "Fy1_glob")].values.astype(float)
-    #     Fy_l = df_cop[find_col(df_cop, "Fy2_glob")].values.astype(float)
+        Fy_r = df_cop[find_col(df_cop, "Fy1_glob")].values.astype(float)
+        Fy_l = df_cop[find_col(df_cop, "Fy2_glob")].values.astype(float)
 
-    # # elif which =='Vinc':
-    # #     Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
-    # #     Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
+    # elif which =='Vinc':
+    #     Fz_r = df_cop[find_col(df_cop, "FZ1")].values.astype(float)
+    #     Fz_l = df_cop[find_col(df_cop, "FZ2")].values.astype(float)
 
-    # #     Fx_r = df_cop[find_col(df_cop, "FX1")].values.astype(float)
-    # #     Fx_l = df_cop[find_col(df_cop, "FX2")].values.astype(float)
+    #     Fx_r = df_cop[find_col(df_cop, "FX1")].values.astype(float)
+    #     Fx_l = df_cop[find_col(df_cop, "FX2")].values.astype(float)
 
-    # #     Fy_r = df_cop[find_col(df_cop, "FY1")].values.astype(float)
-    # #     Fy_l = df_cop[find_col(df_cop, "FY2")].values.astype(float)
+    #     Fy_r = df_cop[find_col(df_cop, "FY1")].values.astype(float)
+    #     Fy_l = df_cop[find_col(df_cop, "FY2")].values.astype(float)
 
         
-    # # else : 
-    # #     Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
-    # #     Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
+    # else : 
+    #     Fz_r = df_cop[find_col(df_cop, "Fz2")].values.astype(float)
+    #     Fz_l = df_cop[find_col(df_cop, "Fz1")].values.astype(float)
 
-    # #     Fx_r = df_cop[find_col(df_cop, "Fx1")].values.astype(float)
-    # #     Fx_l = df_cop[find_col(df_cop, "Fx2")].values.astype(float)
+    #     Fx_r = df_cop[find_col(df_cop, "Fx1")].values.astype(float)
+    #     Fx_l = df_cop[find_col(df_cop, "Fx2")].values.astype(float)
 
-    # #     Fy_r = df_cop[find_col(df_cop, "Fy1")].values.astype(float)
-    # #     Fy_l = df_cop[find_col(df_cop, "Fy2")].values.astype(float)
+    #     Fy_r = df_cop[find_col(df_cop, "Fy1")].values.astype(float)
+    #     Fy_l = df_cop[find_col(df_cop, "Fy2")].values.astype(float)
 
-    # Fz_total = Fz_r + Fz_l
+    Fz_total = Fz_r + Fz_l
 
-    # cop_global = (Fz_r[i] * cop_r + Fz_l[i] * cop_l) / Fz_total[i]
+    cop_global = (Fz_r[i] * cop_r + Fz_l[i] * cop_l) / Fz_total[i]
 
     #     # 1. Préparation des vecteurs (vérifie bien que ce sont des np.array de taille 3)
-    # force_r = np.array([Fx_r[i], Fy_r[i], Fz_r[i]])
-    # force_l = np.array([Fx_l[i], Fy_l[i], Fz_l[i]])
+    force_r = np.array([Fx_r[i], Fy_r[i], Fz_r[i]])
+    force_l = np.array([Fx_l[i], Fy_l[i], Fz_l[i]])
 
     # # 2. Échelle de la flèche (ex: 1000N = 1m)
-    # f_scale = 0.001 
+    f_scale = 0.001 
 
     # # Affichage force pied DROIT (Rouge)
     # if abs(Fz_r[i]) > 10.0:
@@ -337,9 +337,9 @@ for i in range(len(q_ref)):
     #     viewer["force_L"].delete()
 
     # # Affichage de la force totale (Vert)
-    # force_total = force_r + force_l
-    # if abs(Fz_total[i]) > 10.0:
-    #     draw_force_arrow(viewer, "force_Total", cop_global, force_total, color=0x00ff00, scale=f_scale)
+    force_total = force_r + force_l
+    if abs(Fz_total[i]) > 10.0:
+        draw_force_arrow(viewer, "force_Total", cop_global, force_total, color=0x00ff00, scale=f_scale)
             
 
     # safe_place(viewer,"COP_RNEA", cop_rnea)
