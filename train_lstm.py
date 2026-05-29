@@ -125,10 +125,10 @@ def run_experiment():
 
         for task_dir in task_dirs:
             task_name = task_dir.name.lower()
-            if squat:
-                if not is_squat_task_only(subject_name, task_name): continue
-            else: 
-                if not is_squat_task(subject_name, task_name): continue
+            # if squat:
+            #     if not is_squat_task_only(subject_name, task_name): continue
+            # else: 
+            #     if not is_squat_task(subject_name, task_name): continue
 
             kinetics_file = task_dir / "kinetics_feet.npy"
             joints_file = task_dir / "all_joints.npy"
