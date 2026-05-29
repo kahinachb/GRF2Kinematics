@@ -260,13 +260,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
 if __name__ == "__main__":
     
-    SUBJECT_NAME = "Christine"     
-    TRIAL_NAME = "Trial110"     
+    SUBJECT_NAME = "Kahina"     
+    TRIAL_NAME = "squat"     
 
-    MODEL_PATH = "./results_FM_real/cfm_best_model.pth"
-    SCALERS_PATH = "./results_FM_real/scalers_concat.json"
-    DATA_ROOT = "processed_data_feet"
-    OUTPUT_DIR = "./inference_results_CFM_real"
+    MODEL_PATH = "./results_FM_HUM/cfm_best_model.pth"
+    SCALERS_PATH = "./results_FM_HUM/scalers_concat.json"
+    DATA_ROOT = "processed_data_feet_HUM"
+    OUTPUT_DIR = "./inference_results_CFM_HUM"
     
     run_inference(
         subject_name=SUBJECT_NAME,

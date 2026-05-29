@@ -24,18 +24,36 @@ which = 'HUMANOIDS'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
+path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+grf_df = pd.read_csv(path_grf)
+fx1, fy1, fz1 = 'Fx1_glob', 'Fy1_glob', 'Fz1_glob'
+mx1,my1,mz1 =  'Mx1_glob', 'My1_glob', 'Mz1_glob'
+fx2, fy2, fz2 = 'Fx2_glob', 'Fy2_glob', 'Fz2_glob'
+mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
+
+
+
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/Kahina_squat_cfm_prediction.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_HUM/Kahina_squat_cfm_prediction.csv"
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
 
 # path_joint_pred= '/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv'
 # path_joint= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
-q_ref_df_pred = pd.read_csv(path_joint_pred)#.iloc[:,:19]
+q_ref_df_pred = pd.read_csv(path_joint_pred)
 
 dofs = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+        "middle_lumbar_Z", "middle_lumbar_X",
+    "left_clavicle_joint_X",
+    "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
+    "left_elbow_Z", "left_elbow_Y",
+    "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
+    "right_clavicle_joint_X",
+    "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
+    "right_elbow_Z", "right_elbow_Y",
+
 "left_hip_Z",  "left_hip_X",  "left_hip_Y",
 "left_knee_Z", "left_ankle_Z", "left_ankle_X",
 "right_hip_Z", "right_hip_X", "right_hip_Y",
@@ -63,11 +81,25 @@ desired_order_ref = [
     "Rankle_flex_ext","Rankle_abd_add"
 ]
 
+
+
 desired_order_ref = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+                    
+
 "left_hip_Z",  "left_hip_X",  "left_hip_Y",
 "left_knee_Z", "left_ankle_Z", "left_ankle_X",
+
+    "middle_lumbar_Z", "middle_lumbar_X","left_clavicle_joint_X",
+    "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
+    "left_elbow_Z", "left_elbow_Y",
+    "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
+    "right_clavicle_joint_X",
+    "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
+    "right_elbow_Z", "right_elbow_Y",
+
 "right_hip_Z", "right_hip_X", "right_hip_Y",
-"right_knee_Z", "right_ankle_Z", "right_ankle_X",]
+"right_knee_Z", "right_ankle_Z", "right_ankle_X",
+]
 
 desired_order_pred = [
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
@@ -99,46 +131,46 @@ model_h_pred, coll_h_pred, vis_h_pred, _ = build_human_model(urdf_path, urdf_mes
 
 
 # ################################################################################LOCK JOINTS
-all_joint_ids = set(range(1, model_h.njoints))
-joints_to_lock = [#"root_joint",
-                  "middle_lumbar_Z", "middle_lumbar_X",
-    "left_clavicle_joint_X",
-    "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
-    "left_elbow_Z", "left_elbow_Y",
-    "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
-    "right_clavicle_joint_X",
-    "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
-    "right_elbow_Z", "right_elbow_Y" ]
+# all_joint_ids = set(range(1, model_h.njoints))
+# joints_to_lock = [#"root_joint",
+#                   "middle_lumbar_Z", "middle_lumbar_X",
+#     "left_clavicle_joint_X",
+#     "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
+#     "left_elbow_Z", "left_elbow_Y",
+#     "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
+#     "right_clavicle_joint_X",
+#     "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
+#     "right_elbow_Z", "right_elbow_Y" ]
 
-joint_ids_to_lock = []
-for jn in joints_to_lock:
-    if model_h.existJointName(jn):
-        joint_ids_to_lock.append(model_h.getJointId(jn))
-    else:
-        print('Warning: joint ' + str(jn) + ' does not belong to the model!')
+# joint_ids_to_lock = []
+# for jn in joints_to_lock:
+#     if model_h.existJointName(jn):
+#         joint_ids_to_lock.append(model_h.getJointId(jn))
+#     else:
+#         print('Warning: joint ' + str(jn) + ' does not belong to the model!')
 
-q0 = pin.neutral(model_h)
-# Build reduced model
-model_h, vis_h = pin.buildReducedModel(
-    model_h, vis_h, joint_ids_to_lock, q0)
+# q0 = pin.neutral(model_h)
+# # Build reduced model
+# model_h, vis_h = pin.buildReducedModel(
+#     model_h, vis_h, joint_ids_to_lock, q0)
 
-print(model_h.nq)
-data_h = pin.Data(model_h)
+# print(model_h.nq)
+# data_h = pin.Data(model_h)
 ############################################################""
-joint_ids_to_lock = []
-for jn in joints_to_lock:
-    if model_h_pred.existJointName(jn):
-        joint_ids_to_lock.append(model_h_pred.getJointId(jn))
-    else:
-        print('Warning: joint ' + str(jn) + ' does not belong to the model!')
+# joint_ids_to_lock = []
+# for jn in joints_to_lock:
+#     if model_h_pred.existJointName(jn):
+#         joint_ids_to_lock.append(model_h_pred.getJointId(jn))
+#     else:
+#         print('Warning: joint ' + str(jn) + ' does not belong to the model!')
 
-q0 = pin.neutral(model_h_pred)
-# Build reduced model
-model_h_pred, vis_h_pred = pin.buildReducedModel(
-    model_h_pred, vis_h_pred, joint_ids_to_lock, q0)
+# q0 = pin.neutral(model_h_pred)
+# # Build reduced model
+# model_h_pred, vis_h_pred = pin.buildReducedModel(
+#     model_h_pred, vis_h_pred, joint_ids_to_lock, q0)
 
-print(model_h_pred.nq)
-data_h_pred = pin.Data(model_h_pred)
+# print(model_h_pred.nq)
+# data_h_pred = pin.Data(model_h_pred)
 ##############################################################################################################
 
 data_h = model_h.createData()
@@ -177,39 +209,90 @@ native_viz["/Grid"].set_transform(
     np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, grid_height], [0, 0, 0, 1]])
 )
 
+n_samples = len(q_ref)
+nv = model_h.nv
+print("q shape:", q_ref.shape)
+print("nv:", nv)
 
-# import pinocchio as pin
+v_ref = np.zeros((n_samples, nv))
+a_ref = np.zeros((n_samples, nv))
+for i in range(n_samples - 1):
+    v_ref[i, :] = pin.difference(model_h, q_ref[i, :], q_ref[i+1, :]) / dt
+for i in range(n_samples - 1):
+    a_ref[i, :] = (v_ref[i+1, :] - v_ref[i, :]) / dt
+##############################################################pred
+nq = model_h_pred.nq
+q_pred_full = np.zeros((n_samples, nq))
+for i in range(n_samples):
 
-# # Exemple : rotation de 90° autour de X
-# R = pin.utils.rotate('x', np.pi/2)
+    q_pred_full[i, :7] = q_ref[i][:7]              # freeflyer
+    q_pred_full[i, 7:13] = q_ref_pred[i][:6]       # joints prédits
+    q_pred_full[i, 13:30] = q_ref[i][13:30]
+    q_pred_full[i, 30:] = q_ref_pred[i][6:]
 
-# # translation (optionnelle)
-# t = np.array([0, 0, 0])
-
-# placement = pin.SE3(R, t)
-
-# viz_human.viewer["ref"].set_transform(placement.homogeneous)
-# viz_human_pred.viewer["pred"].set_transform(placement.homogeneous)
+nv = model_h_pred.nv
+n_samples = len(q_pred_full)
+v_pred = np.zeros((n_samples, nv))
+a_pred = np.zeros((n_samples, nv))
+for i in range(n_samples - 1):
+    v_pred[i, :] = pin.difference(model_h_pred, q_pred_full[i, :], q_pred_full[i+1, :]) / dt
+for i in range(n_samples - 1):
+    a_pred[i, :] = (v_pred[i+1, :] - v_pred[i, :]) / dt
 
 
 q0 = pin.neutral(model_h)
 viz_human.display(q0)
 images = []
+
+f_ref_world = []
+m_ref_world = []
+f_pred_world = []
+m_pred_world = []
+
 for i in range(len(q_ref)):
 
 
     q_pred_full = np.zeros_like(q_ref[i])
     q_pred_full[:7] = q_ref[i][:7]      # freeflyer
-    q_pred_full[7:] = q_ref_pred[i]     # joints prédits
+    q_pred_full[7:13] = q_ref_pred[i][:6]    # joints prédits
+    q_pred_full[13:30] = q_ref[i][13:30]
+    q_pred_full[30:] = q_ref_pred[i][6:]
 
+    tau_ref = pin.rnea(model_h,data_h,q_ref[i],v_ref[i],a_ref[i])
+    pin.forwardKinematics(model_h, data_h, q_ref[i], v_ref[i], a_ref[i])
+    wrench_base = data_h.f[1]
+    oM1 = data_h.oMi[1]
+    f_world = oM1.act(wrench_base)
+
+    f_ref_world.append(f_world.linear)
+    m_ref_world.append(f_world.angular)
+
+    tau_pred = pin.rnea(model_h_pred,data_h_pred, q_pred_full,v_pred[i],a_pred[i])
+    pin.forwardKinematics(model_h_pred, data_h_pred, q_pred_full, v_pred[i], a_pred[i])
+    wrench_base_pred = data_h_pred.f[1]
+    oM1_pred = data_h_pred.oMi[1]
+    f_world_pred = oM1_pred.act(wrench_base)
+
+    f_pred_world.append(f_world_pred.linear)
+    m_pred_world.append(f_world_pred.angular)
+
+
+    F1 = grf_df.loc[i, [fx1,fy1,fz1]].values
+    F2 = grf_df.loc[i, [fx2,fy2,fz2]].values
+    M1 = grf_df.loc[i, [mx1,my1,mz1]].values / 1000.0
+    M2 = grf_df.loc[i, [mx2,my2,mz2]].values / 1000.0
+    F = F1 + F2
+    M = M1 + M2
+
+  
     viz_human.display(q_ref[i])
     viz_human_pred.display(q_pred_full)
-    images.append(viewer.get_image())
+#     images.append(viewer.get_image())
 
     
-video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/out.mp4"
-imageio.mimsave(video_path, images, fps=fps, codec='libx264')
-print(f"[MeshCat] Video saved to: {video_path}")
+# video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/out.mp4"
+# imageio.mimsave(video_path, images, fps=fps, codec='libx264')
+# print(f"[MeshCat] Video saved to: {video_path}")
 
 
 

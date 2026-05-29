@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 
-path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross/Jeremy_Trial111_prediction_guided.csv"
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv"
+path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_HUM/Kahina_squat_cfm_prediction.csv"
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/Kahina/squat/joints_filtered_FF.csv"
 
 dofs = [
     "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
@@ -12,9 +12,18 @@ dofs = [
     "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
     "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
 ]
+dofs_h =  ["right_hip_Z", "right_hip_X", "right_hip_Y",
+    "right_knee_Z", "right_ankle_Z", "right_ankle_X",
+    "left_hip_Z",  "left_hip_X",  "left_hip_Y",
+    "left_knee_Z", "left_ankle_Z", "left_ankle_X", ]
+
+mapping = dict(zip(dofs_h, dofs))
+new_dofs = [mapping[d] for d in dofs_h]
 
 # Load data
-q_ref_df = pd.read_csv(path_joint, usecols=dofs).iloc[1:, :]
+q_ref_df = pd.read_csv(path_joint, usecols=dofs_h).iloc[1:, :]
+q_ref_df = q_ref_df.rename(columns=mapping)
+
 q_pred_df = pd.read_csv(path_joint_pred)[dofs]
 
 # Match length
