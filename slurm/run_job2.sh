@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_diffuser_large_dataset
+#SBATCH --job-name=train_lstm_with_w_seg
 #SBATCH -A vsi@v100
 #SBATCH -p gpu_p13
 #SBATCH --nodes=1
@@ -18,5 +18,5 @@ module load pytorch-gpu/py3/2.6.0
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_NODELIST | head -n1)
 export MASTER_PORT=29500
 
-srun python train_diffuser_lower_PE_sinTimestepEmbedding.py
+srun python train_lstm_lower_weight_seg.py
  
