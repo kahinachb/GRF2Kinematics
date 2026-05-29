@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
-from utils.utils import is_squat_task, is_squat_task_only
+#from utils.utils import is_squat_task, is_squat_task_only
 import re
 
 squat = False
@@ -108,10 +108,10 @@ def run_experiment():
         dataset = "processed_data_feet"  
         res = "results_FM_S"
     else: 
-        dataset = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_HUM" 
+        dataset = "processed_data_feet_HUM" 
         res = "results_lstm_HUM"
 
-    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
     results_dir = Path(f"{res}")
     results_dir.mkdir(parents=True, exist_ok=True)
     

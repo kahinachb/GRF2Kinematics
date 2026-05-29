@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 import json
 import yaml
-from utils.utils import is_squat_task, is_squat_task_only
+#from utils.utils import is_squat_task, is_squat_task_only
 import re
 
 squat = False
@@ -140,9 +140,9 @@ def run_experiment():
         dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
         res = "results_FM_S_weight_seg"
     else : 
-        dataset = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_HUM" #else humanoids squat normal and paired
+        dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
         res = "results_lstm_HUM_weight_seg"
-    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
