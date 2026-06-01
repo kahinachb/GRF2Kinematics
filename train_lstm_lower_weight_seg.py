@@ -274,7 +274,8 @@ def run_experiment():
 
   
     model = BiLSTM_MLP(input_dim=17, output_dim=12).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-3)
+    init_lr = 0.01
+    optimizer = torch.optim.SGD(model.parameters(), lr=init_lr, momentum=0.9, weight_decay=1e-3)
 
     # 2. Calcul des paramètres du scheduler
     total_epochs = 100
@@ -282,15 +283,15 @@ def run_experiment():
 
     # Phase 1: Exponentiel de 0.1 à 1e-3 sur 933 epochs
     # On cherche gamma tel que 0.1 * (gamma ** milestone) = 1e-3
-    gamma_val = (1e-3 / 0.1) ** (1.0 / milestone)
+    gamma_val = (1e-3 / init_lr) ** (1.0 / milestone)
     scheduler_exp = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_val)
 
     # Phase 2: Linéaire de 1e-3 à 1e-4 sur le reste des epochs (1867)
     # end_factor = 0.1 car 1e-4 est 10% de 1e-3
     scheduler_lin = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=1.0, 
-        end_factor=0.1, 
+        start_factor=(1e-3 / init_lr), 
+        end_factor=(1e-4 / init_lr), 
         total_iters=(total_epochs - milestone)
     )
 
@@ -350,7 +351,7 @@ def run_experiment():
         val_losses.append(avg_val)
 
         avg_rmse = val_rmse_deg / len(val_loader)
-        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val RMSE (degrés): {avg_rmse:.2f}rad")
+        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val RMSE : {avg_rmse:.2f} rad")
 
         if avg_val < best_val_loss:
             best_val_loss = avg_val
