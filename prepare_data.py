@@ -134,12 +134,12 @@ EXPECTED_JOINTS_HUMANOIDS = FF_HUMANOIDS + [
 ]
 
 # EXPECTED_KINETICS = ["Fx1","Fy1","Fz1","Mx1","My1","Mz1","Fx2","Fy2","Fz2","Mx2","My2","Mz2", "COPx1","COPy1","COPz1","COPx2","COPy2","COPz2"]
-# EXPECTED_KINETICS = ["Fx1_glob","Fy1_glob","Fz1_glob","Mx1_glob","My1_glob","Mz1_glob",
-#                      "Fx2_glob","Fy2_glob","Fz2_glob","Mx2_glob","My2_glob","Mz2_glob",
-#                      "COPx1_glob","COPy1_glob","COPz1_glob","COPx2_glob","COPy2_glob","COPz2_glob"]
-EXPECTED_KINETICS = ["Fx1","Fy1","Fz1","Mx1","My1","Mz1",
-                     "Fx2","Fy2","Fz2","Mx2","My2","Mz2",
-                     "COPx1","COPy1","COPz1","COPx2","COPy2","COPz2"]
+EXPECTED_KINETICS = ["Fx1_glob","Fy1_glob","Fz1_glob","Mx1_glob","My1_glob","Mz1_glob",
+                     "Fx2_glob","Fy2_glob","Fz2_glob","Mx2_glob","My2_glob","Mz2_glob",
+                     "COPx1_glob","COPy1_glob","COPz1_glob","COPx2_glob","COPy2_glob","COPz2_glob"]
+# EXPECTED_KINETICS = ["Fx1","Fy1","Fz1","Mx1","My1","Mz1",
+#                      "Fx2","Fy2","Fz2","Mx2","My2","Mz2",
+#                      "COPx1","COPy1","COPz1","COPx2","COPy2","COPz2"]
 
 # 
 SAMPLING_RATE_HZ = 100  # data acquisition frequency
@@ -155,7 +155,7 @@ ALL_JOINTS_WITH_FF_HUMANOIDS = FF_HUMANOIDS + ALL_JOINTS_HUMANOIDS
 # ── Physiological validity ranges ────────────────────────────────────────────
 FORCE_MIN,  FORCE_MAX  = -5000.0,  5000.0   # N
 MOMENT_MIN, MOMENT_MAX =  -1000.0,   1000.0   # Nm
-ANGLE_MIN,  ANGLE_MAX  =    -4.0,     4.0   # rad (~± 229°)
+ANGLE_MIN,  ANGLE_MAX  =    -100.0,     100.0   # rad (~± 229°)
 
 SAMPLING_HZ = 100   # acquisition frequency — used to convert frames to duration
 
@@ -192,19 +192,19 @@ def _build_kinetics_order(dataset_name):
     """Return kinetics column names in the order: right plate → left plate."""
     cfg  = DATASETS[dataset_name]
     r, l = cfg["right_plate"], cfg["left_plate"]
-    return [f"Fx{r}",f"Fy{r}",f"Fz{r}",f"Mx{r}",f"My{r}",f"Mz{r}",f"COPx{r}",f"COPy{r}",f"COPz{r}",
-            f"Fx{l}",f"Fy{l}",f"Fz{l}",f"Mx{l}",f"My{l}",f"Mz{l}",f"COPx{l}",f"COPy{l}",f"COPz{l}",]
+    # return [f"Fx{r}",f"Fy{r}",f"Fz{r}",f"Mx{r}",f"My{r}",f"Mz{r}",f"COPx{r}",f"COPy{r}",f"COPz{r}",
+    #         f"Fx{l}",f"Fy{l}",f"Fz{l}",f"Mx{l}",f"My{l}",f"Mz{l}",f"COPx{l}",f"COPy{l}",f"COPz{l}",]
 
-    # suffix = "_glob"   # 🔥 
+    suffix = "_glob"   # 🔥 
 
-    # return [
-    #     f"Fx{r}{suffix}", f"Fy{r}{suffix}", f"Fz{r}{suffix}",
-    #     f"Mx{r}{suffix}", f"My{r}{suffix}", f"Mz{r}{suffix}",
-    #     f"COPx{r}{suffix}", f"COPy{r}{suffix}", f"COPz{r}{suffix}",
-    #     f"Fx{l}{suffix}", f"Fy{l}{suffix}", f"Fz{l}{suffix}",
-    #     f"Mx{l}{suffix}", f"My{l}{suffix}", f"Mz{l}{suffix}",
-    #     f"COPx{l}{suffix}", f"COPy{l}{suffix}", f"COPz{l}{suffix}",
-    # ]
+    return [
+        f"Fx{r}{suffix}", f"Fy{r}{suffix}", f"Fz{r}{suffix}",
+        f"Mx{r}{suffix}", f"My{r}{suffix}", f"Mz{r}{suffix}",
+        f"COPx{r}{suffix}", f"COPy{r}{suffix}", f"COPz{r}{suffix}",
+        f"Fx{l}{suffix}", f"Fy{l}{suffix}", f"Fz{l}{suffix}",
+        f"Mx{l}{suffix}", f"My{l}{suffix}", f"Mz{l}{suffix}",
+        f"COPx{l}{suffix}", f"COPy{l}{suffix}", f"COPz{l}{suffix}",
+    ]
 
 
 def _check_range(arr, vmin, vmax, label, path):
@@ -215,7 +215,6 @@ def _check_range(arr, vmin, vmax, label, path):
     if mn < vmin or mx > vmax:
         print(label)
         print(f"  [RANGE]  {label}: [{mn:.2f}, {mx:.2f}] outside [{vmin}, {vmax}]  →  {path}")
-        input()
         return [f"  [RANGE]  {label}: [{mn:.2f}, {mx:.2f}] outside [{vmin}, {vmax}]  →  {path}"]
     return []
 
@@ -345,8 +344,8 @@ def process_trial(joints_path, kinetics_path, dataset_name, out_dir, dry_run=Fal
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
         # np.save(out_dir / "lower_body_joints_.npy", arr_lower)  # (T, 12)
-        # np.save(out_dir / "all_joints_.npy",        arr_all)    # (T, 29)
-        np.save(out_dir / "kinetics_feet.npy",           arr_k)     # (T, 12)
+        np.save(out_dir / "all_joints.npy",        arr_all)    # (T, 29)
+        np.save(out_dir / "kinetics_glob.npy",           arr_k)     # (T, 12)
 
     return meta
 
@@ -372,7 +371,7 @@ def find_trials(root: Path, dataset_name: str):
             if not task_dir.is_dir():
                 continue
             j = task_dir / "joints_filtered.csv"
-            k = task_dir / "kinetics_feet.csv"
+            k = task_dir / "kinetics_glob_filtered.csv"
             if j.exists() and k.exists():
                 out_dir = root / "npy" / dataset_name / subject_dir.name / task_dir.name
                 trials.append((j, k, out_dir))

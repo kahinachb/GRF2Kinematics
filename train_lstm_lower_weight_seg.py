@@ -140,9 +140,9 @@ def run_experiment():
         dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
         res = "results_FM_S_weight_seg"
     else : 
-        dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
+        dataset = "processed_data_glob_HUM" #else humanoids squat normal and paired
         res = "results_lstm_HUM_weight_seg"
-    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
