@@ -140,9 +140,9 @@ def run_experiment():
         dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
         res = "results_FM_S_weight_seg"
     else : 
-        dataset = "processed_data_glob_HUM" #else humanoids squat normal and paired
-        res = "results_lstm_HUM_weight_seg"
-    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
+        dataset = "processed_data_pf_HUM" #else humanoids squat normal and paired
+        res = "results_lstm_HUMpf_weight_seg"
+    data_root = Path(f"/pfcalcul/datasets/GRF2Kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
@@ -194,8 +194,8 @@ def run_experiment():
             #     if not is_squat_task(subject_name, task_name):
             #         continue
 
-            kinetics_file = task_dir / "kinetics_feet.npy"
-            joints_file = task_dir / "all_joints.npy"
+            kinetics_file = task_dir / "kinetics.npy"
+            joints_file = task_dir / "joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():
                 all_samples.append({
@@ -259,7 +259,7 @@ def run_experiment():
             j = s["joints"]
             w = s["anchor"]
             if f.exists() and j.exists():
-                pairs.append((f, j,w))
+                pairs.append((f, j,w)) 
 
         return pairs
 

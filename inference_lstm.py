@@ -111,9 +111,9 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         try:
             with open(yaml_files[0], 'r') as f:
                 yd = yaml.safe_load(f)
-                if 'weight_kg' in yd:
+                if 'weight_N' in yd:
                     anthro_data = [
-                        float(yd['weight_kg']), float(yd['left_femur_mm']),
+                        float(yd['weight_N']), float(yd['left_femur_mm']),
                         float(yd['left_tibia_mm']), float(yd['right_femur_mm']),
                         float(yd['right_tibia_mm'])
                     ]
@@ -184,14 +184,14 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
 if __name__ == "__main__":
     
-    SUBJECT_NAME = "Mohamed"  # Assure-toi que c'est le bon nom (souvent en minuscules dans tes dossiers)
+    SUBJECT_NAME = "Kahina"  # Assure-toi que c'est le bon nom (souvent en minuscules dans tes dossiers)
     TRIAL_NAME = "squat"     
 
     # Mets à jour ces chemins selon où ton entraînement a sauvegardé les fichiers !
-    MODEL_PATH = "./results_lstm_HUM_weight_seg/bilstm_best_model.pth"
-    SCALERS_PATH = "./results_lstm_HUM_weight_seg/scalers_concat.json"
+    MODEL_PATH = "./results_lstm_HUM_weight_seg_feet/bilstm_best_model.pth"
+    SCALERS_PATH = "./results_lstm_HUM_weight_seg_feet/scalers_concat.json"
     DATA_ROOT = "processed_data_feet_HUM"
-    OUTPUT_DIR = "./results_lstm_HUM_weight_seg"
+    OUTPUT_DIR = "./results_lstm_HUM_weight_seg_feet"
     
     run_inference(
         subject_name=SUBJECT_NAME,

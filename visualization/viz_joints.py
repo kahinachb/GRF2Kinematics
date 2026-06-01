@@ -22,7 +22,7 @@ import example_robot_data as robex
 
 subject = 'Kahina'
 
-task = 'squat_attelle'
+task = 'squat'
 which = 'HUMANOIDS'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
@@ -39,7 +39,7 @@ meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0
 
 
 if which =='HUMANOIDS' or which=='Anais' or which=='Vinc':
-    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
+    path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF_copy.csv"
     q_ref_df = pd.read_csv(path_joint).iloc[1:,:]
 
     cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
@@ -135,7 +135,26 @@ input()
 
 # ################################################################################LOCK JOINTS
 # all_joint_ids = set(range(1, model_h.njoints))
-# joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z"]
+ 
+
+# joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z",
+#                   "middle_lumbar_X" ,
+#     "middle_lumbar_Z",
+#     "left_clavicle_joint_X",
+#     "left_shoulder_Z"     ,
+#     "left_shoulder_X"     ,
+#     "left_shoulder_Y"     ,
+#     "left_elbow_Z"       ,
+#     "left_elbow_Y"        ,
+#     "middle_cervical_Z"   ,
+#     "middle_cervical_X"   ,
+#     "middle_cervical_Y"   ,
+#     "right_clavicle_joint_X",
+#     "right_shoulder_Z"    ,
+#     "right_shoulder_X"    ,
+#     "right_shoulder_Y"    ,
+#     "right_elbow_Z"     ,
+#     "right_elbow_Y"     ]
 # joint_ids_to_lock = []
 # for jn in joints_to_lock:
 #     if model_h.existJointName(jn):
@@ -324,17 +343,16 @@ for i in range(len(q_ref)):
     # # 2. Échelle de la flèche (ex: 1000N = 1m)
     f_scale = 0.001 
 
-    # # Affichage force pied DROIT (Rouge)
-    # if abs(Fz_r[i]) > 10.0:
-    #     draw_force_arrow(viewer, "force_R", cop1[i], force_r, color=0x0000ff, scale=f_scale)
-    # else:
-    #     viewer["force_R"].delete() # Supprime la flèche quand le pied lève
+    if abs(Fz_r[i]) > 10.0:
+        draw_force_arrow(viewer, "force_R", cop1[i], force_r, color=0x0000ff, scale=f_scale)
+    else:
+        viewer["force_R"].delete() 
 
-    # # Affichage force pied GAUCHE (Bleu)
-    # if abs(Fz_l[i]) > 10.0:
-    #     draw_force_arrow(viewer, "force_L", cop2[i], force_l, color=0xFF8800, scale=f_scale)
-    # else:
-    #     viewer["force_L"].delete()
+
+    if abs(Fz_l[i]) > 10.0:
+        draw_force_arrow(viewer, "force_L", cop2[i], force_l, color=0xFF8800, scale=f_scale)
+    else:
+        viewer["force_L"].delete()
 
     # # Affichage de la force totale (Vert)
     force_total = force_r + force_l
@@ -345,8 +363,8 @@ for i in range(len(q_ref)):
     # safe_place(viewer,"COP_RNEA", cop_rnea)
     # safe_place(viewer, "COP_platform_global", cop_global)
 
-    # safe_place(viewer,"COP_right",  cop1[i])
-    # safe_place(viewer, "COP_left", cop2[i])
+    safe_place(viewer,"COP_right",  cop1[i])
+    safe_place(viewer, "COP_left", cop2[i])
     # frame = mks_dict[i]
     # for name in mks_names:
     #     pos= frame[name].reshape(3,)
