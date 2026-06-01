@@ -109,12 +109,12 @@ def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size
     
     print(f"  [INF] Inférence directe Bi-LSTM-MLP sur essai complet ({T} frames)...")
     
-    # Normalisation
-    f_norm = (f_raw - stats['f_m']) / (stats['f_s'] + 1e-6)
+    # CORRECTION ICI : Ajout de .numpy() pour f_m et f_s
+    f_norm = (f_raw - stats['f_m'].numpy()) / (stats['f_s'].numpy() + 1e-6)
+    
     a_norm = (np.array(anchor, dtype=np.float32) - stats['a_m'].numpy()) / (stats['a_s'].numpy() + 1e-6)
     
     # Concaténation de l'anthropométrie statique sur toute la série temporelle
-    # f_norm passe de 12 à 17 dimensions
     a_repeated_full = np.tile(a_norm, (T, 1))
     f_combined = np.concatenate((f_norm, a_repeated_full), axis=1)
     
@@ -142,7 +142,7 @@ def run_experiment():
     else : 
         dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
         res = "results_lstm_HUM_weight_seg"
-    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
+    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
@@ -173,7 +173,7 @@ def run_experiment():
                     yd = yaml.safe_load(f)
                     if 'weight_kg' in yd:
                         anthro_data = [
-                            float(yd['weight_kg']),
+                            float(yd['weight_N']),
                             float(yd['left_femur_mm']),
                             float(yd['left_tibia_mm']),
                             float(yd['right_femur_mm']),
@@ -272,13 +272,39 @@ def run_experiment():
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
     val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
 
-    # --- Initialisation Modèle (Ton Transformer est compatible !) ---
+  
     model = BiLSTM_MLP(input_dim=17, output_dim=12).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.1, weight_decay=1e-3)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-3)
+
+    # 2. Calcul des paramètres du scheduler
+    total_epochs = 100
+    milestone = total_epochs // 3  # 933 epochs
+
+    # Phase 1: Exponentiel de 0.1 à 1e-3 sur 933 epochs
+    # On cherche gamma tel que 0.1 * (gamma ** milestone) = 1e-3
+    gamma_val = (1e-3 / 0.1) ** (1.0 / milestone)
+    scheduler_exp = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_val)
+
+    # Phase 2: Linéaire de 1e-3 à 1e-4 sur le reste des epochs (1867)
+    # end_factor = 0.1 car 1e-4 est 10% de 1e-3
+    scheduler_lin = torch.optim.lr_scheduler.LinearLR(
+        optimizer, 
+        start_factor=1.0, 
+        end_factor=0.1, 
+        total_iters=(total_epochs - milestone)
+    )
+
+    # Combinaison des deux avec SequentialLR
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[scheduler_exp, scheduler_lin],
+        milestones=[milestone]
+    )
+    
     criterion = nn.MSELoss()
     train_losses, val_losses = [], []
 
-    epochs = 2800
+    epochs = 100
     best_val_loss = float('inf')
 
     print("\n[START] Entraînement Bi-LSTM-MLP (Direct Prediction)...")
@@ -295,6 +321,7 @@ def run_experiment():
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             t_epoch_loss += loss.item()
+        scheduler.step()
         
         # --- Validation ---
         model.eval()
@@ -323,7 +350,7 @@ def run_experiment():
         val_losses.append(avg_val)
 
         avg_rmse = val_rmse_deg / len(val_loader)
-        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val RMSE (degrés): {avg_rmse:.2f}°")
+        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val RMSE (degrés): {avg_rmse:.2f}rad")
 
         if avg_val < best_val_loss:
             best_val_loss = avg_val
