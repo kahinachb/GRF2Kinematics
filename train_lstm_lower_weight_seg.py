@@ -312,6 +312,7 @@ def run_experiment():
 
     print("\n[START] Entraînement Bi-LSTM-MLP (Direct Prediction)...")
     for epoch in range(epochs):
+        # ================= TRAIN =================
         model.train()
         t_epoch_loss = 0
         
@@ -324,12 +325,11 @@ def run_experiment():
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             t_epoch_loss += loss.item()
-        scheduler.step(avg_val)
         
-        # --- Validation ---
+        # ================= VALIDATION =================
         model.eval()
         v_epoch_loss = 0
-        val_rmse_deg = 0.0 
+        val_rmse_rad = 0.0 
         
         with torch.no_grad():
             for f, j in val_loader:
@@ -347,14 +347,20 @@ def run_experiment():
                 mse_rad = nn.MSELoss()(pred_j_denorm, true_j_denorm)
                 val_rmse_rad += torch.sqrt(mse_rad).item()
         
+        # ================= POST-EPOCH (CALCULS & SCHEDULER) =================
+        # Calcul des moyennes par epoch
         avg_train = t_epoch_loss / len(train_loader)
         avg_val = v_epoch_loss / len(val_loader)
+        avg_rmse = val_rmse_rad / len(val_loader)
+        
         train_losses.append(avg_train)
         val_losses.append(avg_val)
 
-        avg_rmse = val_rmse_deg / len(val_loader)
-        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val RMSE : {avg_rmse:.2f} rad")
+        print(f"Epoch {epoch:02d} | Train Loss (norm): {avg_train:.4f} | Val Loss (norm): {avg_val:.4f} | Val RMSE: {avg_rmse:.2f} rad")
 
+        scheduler.step(avg_val)
+        
+        #Sauvegarde
         if avg_val < best_val_loss:
             best_val_loss = avg_val
             torch.save(model.state_dict(), results_dir / "bilstm_best_model.pth")
