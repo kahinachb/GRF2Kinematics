@@ -2,9 +2,29 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 import numpy as np
+from scipy.signal import butter, filtfilt
 
-path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_HUM/Kahina_squat_cfm_prediction.csv"
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/Kahina/squat/joints_filtered_FF.csv"
+fs = 100.0       # Fréquence d'échantillonnage en Hz
+cutoff = 10.0    # Fréquence de coupure en Hz
+order = 4        # Ordre du filtre (4 est un standard courant)
+
+# Fonction pour créer et appliquer le filtre
+def apply_butterworth_filter(data, cutoff, fs, order):
+    nyquist = 0.5 * fs
+    normal_cutoff = cutoff / nyquist
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    
+    # filtfilt applique le filtre sur chaque colonne (axis=0) sans créer de déphasage
+    # padlen est ajusté automatiquement, mais on vérifie que la donnée est assez longue
+    if data.shape[0] > 27: # filtfilt a besoin de suffisamment de points
+        y = filtfilt(b, a, data, axis=0)
+        return y
+    else:
+        print("Attention : données trop courtes pour être filtrées.")
+        return data
+    
+path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_lstm_HUMpf_weight_seg/Thomas_squat_bilstm_prediction.csv"
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/Thomas/squat_joints.csv"
 
 dofs = [
     "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
@@ -21,10 +41,24 @@ mapping = dict(zip(dofs_h, dofs))
 new_dofs = [mapping[d] for d in dofs_h]
 
 # Load data
-q_ref_df = pd.read_csv(path_joint, usecols=dofs_h).iloc[1:, :]
+q_ref_df = pd.read_csv(path_joint, usecols=dofs_h) #.iloc[1:, :]
 q_ref_df = q_ref_df.rename(columns=mapping)
 
 q_pred_df = pd.read_csv(path_joint_pred)[dofs]
+
+q_ref_df[:] = apply_butterworth_filter(
+    q_ref_df.values,
+    cutoff=2,
+    fs=fs,
+    order=order
+)
+
+q_pred_df[:] = apply_butterworth_filter(
+    q_pred_df.values,
+    cutoff=2,
+    fs=fs,
+    order=order
+)
 
 # Match length
 min_len = min(len(q_ref_df), len(q_pred_df))

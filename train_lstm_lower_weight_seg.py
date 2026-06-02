@@ -32,22 +32,14 @@ class BiomechDiffusionDataset(Dataset):
     def __getitem__(self, idx):
         f, j, a = self.samples[idx]
         f, j = torch.from_numpy(f), torch.from_numpy(j)
-        a = torch.tensor(a, dtype=torch.float32) #add segment length and weight
+        a = torch.tensor(a, dtype=torch.float32)
         
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
             j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
             a = (a - self.stats['a_m']) / (self.stats['a_s'] + 1e-6)
 
-        # CORRECTION 2 : Dupliquer les 5 données anthropométriques sur les 40 frames
-        # a passe de shape (5,) à (40, 5)
-        a_repeated = a.unsqueeze(0).repeat(self.window_size, 1)
-        
-        # Concaténer les 12 forces avec les 5 valeurs d'anthro -> shape (40, 17)
-        f_combined = torch.cat((f, a_repeated), dim=1)
-
-        # On renvoie 2 variables pour que la boucle d'entrainement fonctionne
-        return f_combined, j
+        return f, j, a
 
 def compute_and_save_stats(file_list, save_path):
     print("\n[INFO] Calcul des scalers sur le Train Set...")
@@ -295,8 +287,8 @@ def run_experiment():
 
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=4,pin_memory=True,drop_last=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=4,pin_memory=True)
 
   
     model = BiLSTM_MLP(input_dim=17, output_dim=12).to(device)
@@ -316,11 +308,20 @@ def run_experiment():
         model.train()
         t_epoch_loss = 0
         
-        for f, j in train_loader:
-            f, j = f.to(device), j.to(device)
+        for f, j, a in train_loader:
+            f, j, a = f.to(device, non_blocking=True), j.to(device, non_blocking=True), a.to(device, non_blocking=True)
             optimizer.zero_grad()
-            pred_j = model(f)
-            loss = criterion(pred_j, j) 
+
+            a_repeated = a.unsqueeze(1).repeat(1, f.size(1), 1)
+            # Concaténation éclair sur le GPU -> (64, 40, 17)
+            f_combined = torch.cat((f, a_repeated), dim=2)
+
+            pred_j = model(f_combined)
+            mse_loss = criterion(pred_j, j) 
+            #Régulariser les prédictions du modèle
+            reg_term = torch.mean(pred_j ** 2)
+            lambda_reg = 1e-3
+            loss = mse_loss + lambda_reg * reg_term
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -332,12 +333,22 @@ def run_experiment():
         val_rmse_rad = 0.0 
         
         with torch.no_grad():
-            for f, j in val_loader:
-                f, j = f.to(device), j.to(device)
-            
-                pred_j = model(f)
-                v_epoch_loss += nn.MSELoss()(pred_j, j).item()
+            for f, j, a in val_loader:
+                f, j, a = f.to(device, non_blocking=True), j.to(device, non_blocking=True), a.to(device, non_blocking=True)
+                a_repeated = a.unsqueeze(1).repeat(1, f.size(1), 1)
+                # Concaténation éclair sur le GPU -> (64, 40, 17)
+                f_combined = torch.cat((f, a_repeated), dim=2)
+                
+                pred_j = model(f_combined)
+                mse_loss_val = criterion(pred_j, j)
+                reg_term = torch.mean(pred_j ** 2)
+                lambda_reg = 1e-3
+                
+                #calcule la perte du batch, puis on l'AJOUTE (+=) au total via .item()
+                loss_batch = mse_loss_val + lambda_reg * reg_term
+                v_epoch_loss += loss_batch.item()
 
+                # Dénormalisation pour la métrique physique (RMSE en rad)
                 j_s_tensor = stats['j_s'].to(device)
                 j_m_tensor = stats['j_m'].to(device)
                 
