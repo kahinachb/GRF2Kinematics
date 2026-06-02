@@ -8,10 +8,7 @@ from pathlib import Path
 import random
 import json
 import yaml
-#from utils.utils import is_squat_task, is_squat_task_only
 import re
-
-squat = False
 
 # ==========================================
 # 1. DATASET 
@@ -22,11 +19,11 @@ class BiomechDiffusionDataset(Dataset):
         self.window_size = window_size # Sauvegarde pour getitem
         for f_path, j_path, weight in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 6:18]
-            f_data = f_data[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
+            j_data = j_data[:, 7:19] # lower body joints
+            f_data = f_data[:, [0,1,2,3,4,5,9,10,11,12,13,14]] #forces and moments (right and left) ignore cop
             
             # CORRECTION 1 : Many-to-one et stride de 1
-            for i in range(len(f_data) - window_size):
+            for i in range(len(f_data) - window_size + 1):
                 self.samples.append((f_data[i : i+window_size], j_data[i + window_size - 1], weight))
         self.stats = stats
 
@@ -35,7 +32,7 @@ class BiomechDiffusionDataset(Dataset):
     def __getitem__(self, idx):
         f, j, a = self.samples[idx]
         f, j = torch.from_numpy(f), torch.from_numpy(j)
-        a = torch.tensor(a, dtype=torch.float32)
+        a = torch.tensor(a, dtype=torch.float32) #add segment length and weight
         
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
@@ -62,7 +59,7 @@ def compute_and_save_stats(file_list, save_path):
     
 
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 6:18]
+    j_cat= j_cat[:, 7:19]
     f_cat = f_cat[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
             
     a_cat = np.vstack(all_a)
@@ -87,10 +84,10 @@ class BiLSTM_MLP(nn.Module):
         mlp_input_dim = hidden_lstm * 2
         
         self.mlp = nn.Sequential(
-            nn.Linear(mlp_input_dim, 64), nn.BatchNorm1d(64), nn.ReLU(), nn.Dropout(0.25),
-            nn.Linear(64, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(0.25),
-            nn.Linear(256, output_dim)
-        )
+                nn.Linear(mlp_input_dim, 128), nn.BatchNorm1d(128), nn.ReLU(), nn.Dropout(0.25),
+                nn.Linear(128, 64), nn.BatchNorm1d(64), nn.ReLU(), nn.Dropout(0.25),
+                nn.Linear(64, output_dim)
+            )
 
     def forward(self, x):
         lstm_out, (h_n, c_n) = self.lstm(x)
@@ -100,10 +97,10 @@ class BiLSTM_MLP(nn.Module):
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
-def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size=40):
+def predict_full_trial_padding(model, f_path, j_path, anchor, stats, device, window_size=40):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    j_raw = np.load(j_path).astype(np.float32)[:, 6:18]
+    j_raw = np.load(j_path).astype(np.float32)[:, 7:19]
     f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
     T = len(f_raw)
     
@@ -131,20 +128,56 @@ def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size
     
     return j_raw, final_pred
 
+def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size=40):
+    model.eval()
+    f_raw = np.load(f_path).astype(np.float32)
+    j_raw = np.load(j_path).astype(np.float32)[:, 7:19]
+    f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
+    T = len(f_raw)
+    
+    # Sécurité si jamais un essai est plus court que la taille de la fenêtre
+    if T < window_size:
+        print(f"  [WARNING] Essai trop court ({T} frames) pour une fenêtre de {window_size}")
+        return np.array([]), np.array([])
+        
+    print(f"  [INF] Inférence directe Bi-LSTM-MLP sans padding ({T} frames -> {T - window_size + 1} prédictions)...")
+    
+    # 1. Normalisation
+    f_norm = (f_raw - stats['f_m'].numpy()) / (stats['f_s'].numpy() + 1e-6)
+    a_norm = (np.array(anchor, dtype=np.float32) - stats['a_m'].numpy()) / (stats['a_s'].numpy() + 1e-6)
+    
+    # 2. Concaténation de l'anthropométrie statique
+    a_repeated_full = np.tile(a_norm, (T, 1))
+    f_combined = np.concatenate((f_norm, a_repeated_full), axis=1)
+    
+    # 3. Création des fenêtres SANS PADDING (comme au training)
+    # Si T=100 et window_size=40, on aura 61 fenêtres (de 0 à 60)
+    windows = [f_combined[i : i + window_size] for i in range(T - window_size + 1)]
+    windows_tensor = torch.tensor(np.array(windows), dtype=torch.float32).to(device)
+    
+    # 4. Prédiction
+    with torch.no_grad():
+        pred_j_norm = model(windows_tensor)
+        
+    pred_j_norm = pred_j_norm.cpu().numpy()
+    final_pred = (pred_j_norm * stats['j_s'].numpy()) + stats['j_m'].numpy()
+    
+    # 5. Alignement de la référence (Ground Truth)
+    # La première fenêtre [0:40] prédit la frame 39 (la 40ème).
+    # On doit donc couper j_raw pour commencer à l'index window_size - 1.
+    j_reference = j_raw[window_size - 1 : ]
+    
+    return j_reference, final_pred
 # ==========================================
 # 4. RUN EXPERIMENT
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if squat == True :
-        dataset = "processed_data_feet"  #dataset vinc + humanoids bu only normal squat.
-        res = "results_FM_S_weight_seg"
-    else : 
-        dataset = "processed_data_pf_HUM" #else humanoids squat normal and paired
-        res = "results_lstm_HUMpf_weight_seg"
-    data_root = Path(f"/pfcalcul/datasets/GRF2Kine/{dataset}")
+ 
+    dataset = "processed_data_pf_HUM" 
+    res = "results_lstm_HUMpf_weight_seg"
+    data_root = Path(f"{dataset}")
 
-    print("squat", squat)
     print(dataset)
     results_dir = Path(f"{res}")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -187,13 +220,6 @@ def run_experiment():
 
         for task_dir in task_dirs:
             task_name = task_dir.name.lower()
-            # if squat == True:
-            #     if not is_squat_task_only(subject_name, task_name):
-            #         continue
-            # else : 
-            #     if not is_squat_task(subject_name, task_name):
-            #         continue
-
             kinetics_file = task_dir / "kinetics.npy"
             joints_file = task_dir / "joints.npy"
 
@@ -274,33 +300,9 @@ def run_experiment():
 
   
     model = BiLSTM_MLP(input_dim=17, output_dim=12).to(device)
-    init_lr = 0.01
-    optimizer = torch.optim.SGD(model.parameters(), lr=init_lr, momentum=0.9, weight_decay=1e-3)
-
-    # 2. Calcul des paramètres du scheduler
-    total_epochs = 100
-    milestone = total_epochs // 3  # 933 epochs
-
-    # Phase 1: Exponentiel de 0.1 à 1e-3 sur 933 epochs
-    # On cherche gamma tel que 0.1 * (gamma ** milestone) = 1e-3
-    gamma_val = (1e-3 / init_lr) ** (1.0 / milestone)
-    scheduler_exp = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_val)
-
-    # Phase 2: Linéaire de 1e-3 à 1e-4 sur le reste des epochs (1867)
-    # end_factor = 0.1 car 1e-4 est 10% de 1e-3
-    scheduler_lin = torch.optim.lr_scheduler.LinearLR(
-        optimizer, 
-        start_factor=(1e-3 / init_lr), 
-        end_factor=(1e-4 / init_lr), 
-        total_iters=(total_epochs - milestone)
-    )
-
-    # Combinaison des deux avec SequentialLR
-    scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer,
-        schedulers=[scheduler_exp, scheduler_lin],
-        milestones=[milestone]
-    )
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4) 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)        
     
     criterion = nn.MSELoss()
     train_losses, val_losses = [], []
@@ -322,12 +324,12 @@ def run_experiment():
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             t_epoch_loss += loss.item()
-        scheduler.step()
+        scheduler.step(avg_val)
         
         # --- Validation ---
         model.eval()
         v_epoch_loss = 0
-        val_rmse_deg = 0.0 # Correction : Initialisation de la variable
+        val_rmse_deg = 0.0 
         
         with torch.no_grad():
             for f, j in val_loader:
@@ -339,11 +341,11 @@ def run_experiment():
                 j_s_tensor = stats['j_s'].to(device)
                 j_m_tensor = stats['j_m'].to(device)
                 
-                pred_j_deg = (pred_j * j_s_tensor) + j_m_tensor
-                true_j_deg = (j * j_s_tensor) + j_m_tensor
+                pred_j_denorm = (pred_j * j_s_tensor) + j_m_tensor
+                true_j_denorm = (j * j_s_tensor) + j_m_tensor
                 
-                mse_deg = nn.MSELoss()(pred_j_deg, true_j_deg)
-                val_rmse_deg += torch.sqrt(mse_deg).item()
+                mse_rad = nn.MSELoss()(pred_j_denorm, true_j_denorm)
+                val_rmse_rad += torch.sqrt(mse_rad).item()
         
         avg_train = t_epoch_loss / len(train_loader)
         avg_val = v_epoch_loss / len(val_loader)
