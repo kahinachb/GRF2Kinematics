@@ -222,7 +222,7 @@ def run_experiment():
                     "task": task_name,
                     "kinetics": kinetics_file,
                     "joints": joints_file,
-                    "anchor": anthro_data  # <--- Passes the dynamically loaded weight
+                    "anchor": anthro_data  
                 })
 
     print(f"Nombre total de samples squat : {len(all_samples)}")
@@ -301,7 +301,7 @@ def run_experiment():
 
     epochs = 100
     best_val_loss = float('inf')
-
+    lambda_reg = 0
     print("\n[START] Entraînement Bi-LSTM-MLP (Direct Prediction)...")
     for epoch in range(epochs):
         # ================= TRAIN =================
@@ -313,14 +313,13 @@ def run_experiment():
             optimizer.zero_grad()
 
             a_repeated = a.unsqueeze(1).repeat(1, f.size(1), 1)
-            # Concaténation éclair sur le GPU -> (64, 40, 17)
+
             f_combined = torch.cat((f, a_repeated), dim=2)
 
             pred_j = model(f_combined)
             mse_loss = criterion(pred_j, j) 
-            #Régulariser les prédictions du modèle
+
             reg_term = torch.mean(pred_j ** 2)
-            lambda_reg = 1e-3
             loss = mse_loss + lambda_reg * reg_term
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -336,19 +335,17 @@ def run_experiment():
             for f, j, a in val_loader:
                 f, j, a = f.to(device, non_blocking=True), j.to(device, non_blocking=True), a.to(device, non_blocking=True)
                 a_repeated = a.unsqueeze(1).repeat(1, f.size(1), 1)
-                # Concaténation éclair sur le GPU -> (64, 40, 17)
+
                 f_combined = torch.cat((f, a_repeated), dim=2)
                 
                 pred_j = model(f_combined)
                 mse_loss_val = criterion(pred_j, j)
                 reg_term = torch.mean(pred_j ** 2)
-                lambda_reg = 1e-3
                 
-                #calcule la perte du batch, puis on l'AJOUTE (+=) au total via .item()
+                
                 loss_batch = mse_loss_val + lambda_reg * reg_term
                 v_epoch_loss += loss_batch.item()
 
-                # Dénormalisation pour la métrique physique (RMSE en rad)
                 j_s_tensor = stats['j_s'].to(device)
                 j_m_tensor = stats['j_m'].to(device)
                 
