@@ -8,6 +8,7 @@ from pathlib import Path
 import random
 import json
 from utils.diffuser_utils import DDPM 
+from utils.utils import is_squat_task
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -152,7 +153,7 @@ class DiffusionTransformer(nn.Module):
             activation="gelu",    
             batch_first=True, 
             norm_first=True, 
-            dropout=0.1
+            dropout=0.25
         )
         self.transformer = nn.TransformerDecoder(layer, num_layers=2)
         
@@ -290,9 +291,9 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("processed_data_feet")
+    data_root = Path("/datasets/GRF2Kine/processed_data_feet")
 
-    results_dir = Path("results_full_real_selfs")
+    results_dir = Path("results_full_step2motion")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -308,6 +309,8 @@ def run_experiment():
         for task_dir in task_dirs:
 
             task_name = task_dir.name.lower()
+            # if not is_squat_task(subject_name, task_name):
+            #     continue
 
 
 
@@ -391,12 +394,12 @@ def run_experiment():
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
     model = DiffusionTransformer().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4) 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2) 
     
     print(f"Nombre de paramètres : {count_parameters(model):,}")
     train_losses, val_losses = [], []
 
-    epochs = 1
+    epochs = 500
     print(f"\n[START] Entraînement DDPM...")
     best_val_loss = float('inf')
     for epoch in range(epochs):
@@ -413,7 +416,7 @@ def run_experiment():
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
             pred_x0 = model(j_noisy, t, f)
-            loss = nn.L1Loss()()(pred_x0, j) 
+            loss = nn.L1Loss()(pred_x0, j) 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
             optimizer.step()
@@ -430,7 +433,7 @@ def run_experiment():
                 
                 # Model predicts x0, compare it to j
                 pred_x0 = model(j_noisy, t, f)
-                v_loss += nn.L1Loss()()(pred_x0, j).item()
+                v_loss += nn.L1Loss()(pred_x0, j).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
@@ -452,6 +455,8 @@ def run_experiment():
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
+    print("\n[INFO] Chargement du meilleur modèle pour l'inférence...")
+    model.load_state_dict(torch.load(results_dir / "diffusion_biomech_model_best.pth"))
     test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)

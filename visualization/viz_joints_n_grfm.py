@@ -20,10 +20,10 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'Jeremy'
+subject = 'subject15'
 
-task = 'Trial111'
-which = 'Vinc'
+task = 'walk'
+which = 'Anais'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 

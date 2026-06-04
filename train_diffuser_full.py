@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 import json
 from utils.diffuser_utils import DDPM 
-
+from utils.utils import is_squat_task
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -145,7 +145,7 @@ class DiffusionTransformer(nn.Module):
         # On augmente le max_len car notre séquence concaténée sera plus longue (jusqu'à 6*W)
         self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=2000) 
         
-        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True, dropout=0.1)
+        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True, dropout=0.12)
         self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
         
         # Output projections pour reconstituer les 29 joints
@@ -380,7 +380,7 @@ def run_experiment():
             optimizer.zero_grad()
             # On normalise t pour le modèle (0 à 1)
             pred_x0 = model(j_noisy, t, f)
-            loss = nn.L1Loss()()(pred_x0, j) 
+            loss = nn.L1Loss()(pred_x0, j) 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) #gradient need to be clipped(to avoid explosion gradient) while using cross attention
             optimizer.step()
@@ -397,7 +397,7 @@ def run_experiment():
                 
                 # Model predicts x0, compare it to j
                 pred_x0 = model(j_noisy, t, f)
-                v_loss += nn.L1Loss()()(pred_x0, j).item()
+                v_loss += nn.L1Loss()(pred_x0, j).item()
         
         train_losses.append(t_loss/len(train_loader))
         val_losses.append(v_loss/len(val_loader))
