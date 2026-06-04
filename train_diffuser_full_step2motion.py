@@ -291,9 +291,9 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/processed_data_feet")
+    data_root = Path("/datasets/GRF2Kine/processed_data_feet_corr")
 
-    results_dir = Path("results_full_step2motion")
+    results_dir = Path("results_full_step2motion_corr")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -314,7 +314,7 @@ def run_experiment():
 
 
 
-            kinetics_file = task_dir / "kinetics_feet.npy"
+            kinetics_file = task_dir / "kinetics_feet_corr.npy"
             joints_file = task_dir / "all_joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():

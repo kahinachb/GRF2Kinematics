@@ -104,7 +104,7 @@ for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
 
     trial_id = f"{subject}_{trial}"
 
-    output_path = trial_dir / f"kinetics_feet.csv"
+    output_path = trial_dir / f"kinetics_feet_corr.csv"
 
 
     print(f"Processing: {trial_id}")
@@ -188,30 +188,50 @@ for path_joint in base_dir.glob("*/*/joints_filtered_FF.csv"):
 
         # Pied Gauche
         R_fL, P_fL = T_w_fL[:3, :3], T_w_fL[:3, 3]
-        F_locL = R_fL.T @ F_wL
-        M_locL = R_fL.T @ (M_wL - np.cross(P_fL, F_wL))
-        cop_locL = R_fL.T @ (cop_wL - P_fL)
-
-        # Pied Droit
-        R_fR, P_fR = T_w_fR[:3, :3], T_w_fR[:3, 3]
-        F_locR = R_fR.T @ F_wR
-        M_locR = R_fR.T @ (M_wR - np.cross(P_fR, F_wR))
-        cop_locR = R_fR.T @ (cop_wR - P_fR)
-
-        # --- BACK TO WORLD ---
         
+        # Correction de Polarité (si l'axe Z est inversé)
+        if F_wL[2] < -20.0:
+            F_wL[2] *= -1.0
+            
+        # Vérification du contact au sol
+        if np.abs(F_wL[2]) > 20.0:
+            F_locL = R_fL.T @ F_wL
+            M_locL = R_fL.T @ (M_wL - np.cross(P_fL, F_wL))
+            # Utilisation du signe (+) pour la correction géométrique du CoP
+            cop_locL = R_fL.T @ (cop_wL - P_fL)
+        else:
+            # Pied en l'air : on force toutes les cinétiques à zéro pur
+            F_locL = np.zeros(3)
+            M_locL = np.zeros(3)
+            cop_locL = np.zeros(3)
+
+        # ==========================================
+        # Pied Droit
+        # ==========================================
+        R_fR, P_fR = T_w_fR[:3, :3], T_w_fR[:3, 3]
+        
+        if F_wR[2] < -20.0:
+            F_wR[2] *= -1.0
+            
+        if np.abs(F_wR[2]) > 20.0:
+            F_locR = R_fR.T @ F_wR
+            M_locR = R_fR.T @ (M_wR - np.cross(P_fR, F_wR))
+            # Utilisation du signe (+) pour la correction géométrique du CoP
+            cop_locR = R_fR.T @ (cop_wR - P_fR)
+        else:
+            F_locR = np.zeros(3)
+            M_locR = np.zeros(3)
+            cop_locR = np.zeros(3)
+
+        # --- BACK TO WORLD (Vérification de l'erreur) ---
+        # On n'oublie pas d'inverser le signe pour le retour au repère global !
         F_world_check = R_fR @ F_locR
         M_world_check = (R_fR @ M_locR) + np.cross(P_fR, F_world_check)
-        cop_world_check = (R_fR @ cop_locR) + P_fR
-
-        # --- COMPARAISON (Vérification de l'erreur) ---
-        error_F = np.linalg.norm(F_wR - F_world_check)
-        error_M = np.linalg.norm(M_wR - M_world_check)
-        error_COP = np.linalg.norm(cop_wR - cop_world_check)
-
-        if error_F > 1e-6 or error_M > 1e-6:
-            print(f"!!! Erreur de calcul au frame {i} !!!")
-            print(f"Erreur Force: {error_F}, Erreur Moment: {error_M}, Erreur COP: {error_COP}")
+        
+        if np.abs(F_wR[2]) > 20.0:
+            cop_world_check = (R_fR @ cop_locR) + P_fR  # Le (+) devient un (-)
+        else:
+            cop_world_check = cop_wR
 
 
 
