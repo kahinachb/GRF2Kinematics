@@ -348,15 +348,15 @@ def run_experiment():
 
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
     # --- Initialisation Modèle (Ton Transformer est compatible !) ---
     model = DiffusionTransformer(joint_dim=12).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     train_losses, val_losses = [], []
 
-    epochs = 1 # Le CFM peut nécessiter plus d'epochs mais converge vers un meilleur résultat
+    epochs = 200 # Le CFM peut nécessiter plus d'epochs mais converge vers un meilleur résultat
     best_val_loss = float('inf')
 
     print(f"\n[START] Entraînement Conditional Flow Matching...")

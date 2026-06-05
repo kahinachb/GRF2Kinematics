@@ -301,8 +301,8 @@ def run_experiment():
     print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64)
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)
@@ -315,7 +315,7 @@ def run_experiment():
     print(f"Nombre de paramètres : {count_parameters(model):,}")
     train_losses, val_losses = [], []
 
-    epochs = 1
+    epochs = 500
     print(f"\n[START] Entraînement DDPM...")
     best_val_loss = float('inf')
     for epoch in range(epochs):
