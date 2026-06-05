@@ -291,7 +291,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/processed_data_feet_corr")
+    data_root = Path("/datasets/GRF2Kine/synth_npy_all")
 
     results_dir = Path("results_full_step2motion_corr")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -309,13 +309,10 @@ def run_experiment():
         for task_dir in task_dirs:
 
             task_name = task_dir.name.lower()
-            # if not is_squat_task(subject_name, task_name):
-            #     continue
 
 
-
-            kinetics_file = task_dir / "kinetics_feet_corr.npy"
-            joints_file = task_dir / "all_joints.npy"
+            kinetics_file = task_dir / "kinetics_deltaf.npy"
+            joints_file = task_dir / "all_joints_deltaf.npy"
 
             if kinetics_file.exists() and joints_file.exists():
 
@@ -330,7 +327,7 @@ def run_experiment():
     print(f"Nombre total de samples squat : {len(all_samples)}")
     
     unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
-    print(unique_subjects)
+    # print(unique_subjects)
     random.seed(42)
     random.shuffle(unique_subjects)
 
@@ -385,11 +382,11 @@ def run_experiment():
 
 
     train_pairs = get_pairs(train_subs)
-    print("train_pairs", train_pairs)
+    # print("train_pairs", train_pairs)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=4,pin_memory=True,drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=4,pin_memory=True)
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
     # Initialisation DDPM
     ddpm = DDPM(device, n_steps=1000)

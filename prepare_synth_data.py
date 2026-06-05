@@ -30,11 +30,19 @@ def process_folder_to_local_delta(input_folder, output_base):
     
     for j_file in joint_files:
         trial_id = os.path.basename(j_file).replace("_q", "").replace(".csv", "")
+
+        parts = trial_id.split("_")
+
+        subject_name = "_".join(parts[:2])   # subject_01
+
+        variant_idx = parts.index("variant")
+        task_name = "_".join(parts[variant_idx:])
+        
         k_file = input_path / f"{trial_id}_grfm.csv"
         print(k_file)
         if not k_file.exists(): continue
         
-        trial_dir = output_path / trial_id
+        trial_dir = output_path / subject_name / task_name
         # Optionnel : skip si déjà fait
         # if (trial_dir / "all_joints.npy").exists(): continue
 
@@ -70,8 +78,6 @@ def process_folder_to_local_delta(input_folder, output_base):
             local_delta_rot_obj = r_t.inv() * r_next
             local_delta_rotvec = local_delta_rot_obj.as_rotvec()
 
-            # --- DELTA AUTRES JOINTS ---
-            # Pour les articulations (angles), le delta reste une simple soustraction
             pose_joints = raw_joints[1:, 7:]
 
             # --- CONCATÉNATION (3 pos + 3 rotvec + 29 angles = 35 cols) ---
