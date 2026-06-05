@@ -9,7 +9,7 @@ import random
 import json
 from utils.diffuser_utils import DDPM 
 # from utils.utils import is_squat_task
-
+import re
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -217,6 +217,8 @@ def run_experiment():
     for subject_dir in subjects:
 
         subject_name = subject_dir.name.lower()
+        canonical_subject = re.sub(r'\d+$', '', subject_name)
+        print(canonical_subject)
 
         task_dirs = [d for d in subject_dir.iterdir() if d.is_dir()]
 
@@ -234,6 +236,7 @@ def run_experiment():
 
                 all_samples.append({
                     "subject": subject_name,
+                    "canonical_subject": canonical_subject,
                     "task": task_name,
                     "kinetics": kinetics_file,
                     "joints": joints_file
@@ -242,7 +245,7 @@ def run_experiment():
 
     print(f"Nombre total de samples squat : {len(all_samples)}")
     
-    unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
+    unique_subjects = sorted(list(set(s["canonical_subject"] for s in all_samples)))
     print(unique_subjects)
     random.seed(42)
     random.shuffle(unique_subjects)
@@ -269,9 +272,9 @@ def run_experiment():
     )
 
 
-    train_subs = [s for s in all_samples if s["subject"] in train_subjects]
-    val_subs = [s for s in all_samples if s["subject"] in val_subjects]
-    test_subs = [s for s in all_samples if s["subject"] in test_subjects]
+    train_subs = [s for s in all_samples if s["canonical_subject"] in train_subjects]
+    val_subs = [s for s in all_samples if s["canonical_subject"] in val_subjects]
+    test_subs = [s for s in all_samples if s["canonical_subject"] in test_subjects]
 
     print(f"\n[SPLIT SUMMARY]")
     print(f"Train subjects : {len(train_subjects)}")
