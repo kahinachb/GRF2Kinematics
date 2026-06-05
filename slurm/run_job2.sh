@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=10
+#SBATCH --cpus-per-task=8
 #SBATCH --time=20:00:00
 #SBATCH --output=LOG_PE_sin/out/%j.out
 #SBATCH --error=LOG_PE_sin/err/%j.err

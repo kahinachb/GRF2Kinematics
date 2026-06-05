@@ -166,9 +166,9 @@ def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
  
-    dataset = "processed_data_pf_HUM" 
-    res = "results_lstm_HUMpf_weight_seg"
-    data_root = Path(f"{dataset}")
+    dataset = "processed_data_feet_HUM" 
+    res = "results_lstm_HUMfeet_weight_seg"
+    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
 
     print(dataset)
     results_dir = Path(f"{res}")
@@ -212,8 +212,8 @@ def run_experiment():
 
         for task_dir in task_dirs:
             task_name = task_dir.name.lower()
-            kinetics_file = task_dir / "kinetics.npy"
-            joints_file = task_dir / "joints.npy"
+            kinetics_file = task_dir / "kinetics_feet.npy"
+            joints_file = task_dir / "all_joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():
                 all_samples.append({
@@ -287,8 +287,8 @@ def run_experiment():
 
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=4,pin_memory=True,drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=4,pin_memory=True)
+    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
   
     model = BiLSTM_MLP(input_dim=17, output_dim=12).to(device)
