@@ -108,7 +108,7 @@ class DiffusionTransformer(nn.Module):
         self.force_embed = nn.Linear(force_dim, embed_dim)
         
         self.anthro_embed = nn.Sequential(
-            nn.Linear(8, embed_dim), 
+            nn.Linear(5, embed_dim), 
             nn.SiLU(),
             nn.Linear(embed_dim, embed_dim)
         )
