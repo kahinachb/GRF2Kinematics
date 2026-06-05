@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 import json
 import yaml
-from utils.utils import is_squat_task, is_squat_task_only
+# from utils.utils import is_squat_task, is_squat_task_only
 import re
 
 squat = False
@@ -22,6 +22,7 @@ class BiomechDiffusionDataset(Dataset):
         for f_path, j_path, weight in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
             j_data = j_data[:, 6:18]
+            f_data = f_data[:, [0,1,2,3,4,5,9,10,11,12,13,14]] 
             
             for i in range(0, len(f_data) - window_size, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size], weight))
@@ -51,6 +52,8 @@ def compute_and_save_stats(file_list, save_path):
 
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
     j_cat= j_cat[:, 6:18]
+    f_cat = f_cat[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
+
     a_cat = np.vstack(all_a)
     
     stats = {
@@ -93,13 +96,13 @@ class SinusoidalTimeEmbeddings(nn.Module):
         device = time.device
         half_dim = self.dim // 2
         embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = torch.exp(torch.arange(half_dim, device=device, dtype=torch.float32) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -165,6 +168,7 @@ def predict_full_trial(model, f_path, j_path,weight, stats, device, window_size=
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
     j_raw = j_raw[:, 6:18] # Focus bas du corps
+    f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
 
     # ---> ADDED: Format weight for inference <---
     a_tensor = torch.tensor(weight, dtype=torch.float32) # 'weight' here is the 8D list from your random_trial
@@ -218,7 +222,7 @@ def run_experiment():
     else : 
         dataset = "processed_data_feet_HUM" #else humanoids squat normal and paired
         res = "results_FM_HUM_weight_seg"
-    data_root = Path(f"/datasets/GRF2Kine/{dataset}")
+    data_root = Path(f"/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/{dataset}")
 
     print("squat", squat)
     print(dataset)
@@ -241,7 +245,7 @@ def run_experiment():
         # Look for any .yaml or .yml file in the subject directory
         yaml_files = list(subject_dir.glob("*.yaml")) + list(subject_dir.glob("*.yml"))
         
-        anthro_data = [70.0, 250.0, 450.0, 400.0, 200.0, 450.0, 400.0, 200.0] 
+        anthro_data = [70.0, 450.0, 400.0, 450.0, 400.0]  
         
         if yaml_files:
             try:
@@ -249,14 +253,11 @@ def run_experiment():
                     yd = yaml.safe_load(f)
                     if 'weight_kg' in yd:
                         anthro_data = [
-                            float(yd['weight_kg']),
-                            float(yd['pelvis_width_mm']),
+                            float(yd['weight_N']),
                             float(yd['left_femur_mm']),
                             float(yd['left_tibia_mm']),
-                            float(yd['left_foot_mm']),
                             float(yd['right_femur_mm']),
                             float(yd['right_tibia_mm']),
-                            float(yd['right_foot_mm'])
                         ]
             except Exception as e:
                 print(f"  [WARNING] Could not read anthro data for {subject_name}: {e}")
@@ -265,12 +266,12 @@ def run_experiment():
 
         for task_dir in task_dirs:
             task_name = task_dir.name.lower()
-            if squat == True:
-                if not is_squat_task_only(subject_name, task_name):
-                    continue
-            else : 
-                if not is_squat_task(subject_name, task_name):
-                    continue
+            # if squat == True:
+            #     if not is_squat_task_only(subject_name, task_name):
+            #         continue
+            # else : 
+            #     if not is_squat_task(subject_name, task_name):
+            #         continue
 
             kinetics_file = task_dir / "kinetics_feet.npy"
             joints_file = task_dir / "all_joints.npy"

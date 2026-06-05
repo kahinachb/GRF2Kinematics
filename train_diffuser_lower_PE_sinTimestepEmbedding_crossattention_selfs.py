@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 import json
 from utils.diffuser_utils import DDPM 
-from utils.utils import is_squat_task
+# from utils.utils import is_squat_task
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -45,7 +45,8 @@ class BiomechDiffusionDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 6:]
+            j_data = j_data[:, 6:18]
+            f_data = f_data[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
             
             for i in range(0, len(f_data) - window_size + 1, window_size // 2):
                 self.samples.append((f_data[i:i+window_size], j_data[i:i+window_size]))
@@ -67,7 +68,8 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 6:]
+    j_cat= j_cat[:, 6:18]
+    f_cat = f_cat[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
     
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
@@ -108,13 +110,13 @@ class SinusoidalTimeEmbeddings(nn.Module):
         device = time.device
         half_dim = self.dim // 2
         embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = torch.exp(torch.arange(half_dim, device=device, dtype=torch.float32) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=29, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=2):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -166,13 +168,14 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)
-    j_raw = j_raw[:, 6:]
+    j_raw = j_raw[:, 6:18]
+    f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
   
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
     T = f_norm.shape[0]
-    full_pred = torch.zeros((T, 29)).to(device)
-    count_map = torch.zeros((T, 29)).to(device)
+    full_pred = torch.zeros((T, 12)).to(device)
+    count_map = torch.zeros((T, 12)).to(device)
 
     print(f"  [INF] Sampling trial complet ({T} frames)...")
     
@@ -181,7 +184,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
         f_win = f_norm[start:end].unsqueeze(0).to(device)
         
         # Start from pure noise
-        curr_j = torch.randn((1, window_size, 29)).to(device)
+        curr_j = torch.randn((1, window_size, 12)).to(device)
         
         # Reverse Diffusion loop
         for t_idx in reversed(range(ddpm.n_steps)):
@@ -202,9 +205,9 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("processed_data_feet")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_HUM")
 
-    results_dir = Path("results_full_real_selfs")
+    results_dir = Path("results_lower_HUM_selfs")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -367,52 +370,12 @@ def run_experiment():
     torch.save(model.state_dict(), results_dir /"diffusion_biomech_model_concat.pth")
 
     # # --- INFERENCE SUR TEST (FENÊTRE) ---
-    # print("[INF] Génération d'un exemple de test...")
-    # test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
-    # f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
-    # f_in = f_in.unsqueeze(0).to(device)
-    
-    # curr_j = torch.randn((1, 128, 12)).to(device)
-    # for t_idx in reversed(range(ddpm.n_steps)):
-    #     with torch.no_grad():
-    #         curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_in)
-
-    # pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
-    # ref = (j_ref * stats['j_s']) + stats['j_m']
-
-    # fig, axes = plt.subplots(4, 3, figsize=(15, 12))
-    # for i, ax in enumerate(axes.flatten()):
-    #     ax.plot(ref[:, i], 'k--', label='Ref'); ax.plot(pred[:, i], 'r', label='Pred')
-    #     ax.set_title(f"Joint {i+1}"); ax.legend()
-    # plt.tight_layout(); plt.savefig(results_dir /"inference_test_concat.png"); plt.close()
-
-    # # --- INFERENCE COMPLÈTE ---
-    # print("\n[INF] Inférence sur un essai COMPLET...")
-    # test_pairs = get_pairs(test_subs)
-    # random_trial = random.choice(test_pairs)
-    # print("random_trial for test", random_trial)
-    # ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
-
-    # fig, axes = plt.subplots(4, 3, figsize=(18, 14))
-    # for i, ax in enumerate(axes.flatten()):
-    #     ax.plot(ref_full[:, i], 'k--', alpha=0.6, label='Reference')
-    #     ax.plot(pred_full[:, i], 'r', label='DDPM Pred')
-    #     ax.set_title(f"Joint {i+1}")
-    #     if i == 0: ax.legend()
-    # plt.suptitle(f"Full Trial DDPM Inference: {random_trial[0].parent.name}", fontsize=16)
-    # plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference_concat.png"); plt.close()
-    
-    # plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
-    # plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
-    # print(f"\n[FINISH] Résultats sauvegardés.")
-
-    # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
     test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
-    curr_j = torch.randn((1, 128, 29)).to(device)
+    curr_j = torch.randn((1, 128, 12)).to(device)
     for t_idx in reversed(range(ddpm.n_steps)):
         with torch.no_grad():
             curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_in)
@@ -420,33 +383,11 @@ def run_experiment():
     pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
     ref = (j_ref * stats['j_s']) + stats['j_m']
 
-    ig, axes = plt.subplots(4, 3, figsize=(15, 12))
+    fig, axes = plt.subplots(4, 3, figsize=(15, 12))
     for i, ax in enumerate(axes.flatten()):
-        ax.plot(ref[:, i], 'k--', label='Ref')
-        ax.plot(pred[:, i], 'r', label='Pred')
-        ax.set_title(f"Joint {i+1}")
-        ax.legend()
-
-    plt.tight_layout()
-    plt.savefig(results_dir / "inference_test_joints_1_12.png")
-    plt.close()
-
-    fig, axes = plt.subplots(6, 3, figsize=(15, 18))  # 18 slots (17 utilisés)
-
-    for i, ax in enumerate(axes.flatten()):
-        j_idx = i + 12
-        if j_idx >= 29:
-            ax.axis('off')
-            continue
-
-        ax.plot(ref[:, j_idx], 'k--', label='Ref')
-        ax.plot(pred[:, j_idx], 'r', label='Pred')
-        ax.set_title(f"Joint {j_idx+1}")
-        ax.legend()
-
-    plt.tight_layout()
-    plt.savefig(results_dir / "inference_test_joints_13_29.png")
-    plt.close()
+        ax.plot(ref[:, i], 'k--', label='Ref'); ax.plot(pred[:, i], 'r', label='Pred')
+        ax.set_title(f"Joint {i+1}"); ax.legend()
+    plt.tight_layout(); plt.savefig(results_dir /"inference_test_concat.png"); plt.close()
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
@@ -455,12 +396,74 @@ def run_experiment():
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
 
-    plot_joints(ref_full, pred_full, 0, 12, results_dir/"fig1.png")
-    plot_joints(ref_full, pred_full, 12, 29, results_dir/"fig2.png")
+    fig, axes = plt.subplots(4, 3, figsize=(18, 14))
+    for i, ax in enumerate(axes.flatten()):
+        ax.plot(ref_full[:, i], 'k--', alpha=0.6, label='Reference')
+        ax.plot(pred_full[:, i], 'r', label='DDPM Pred')
+        ax.set_title(f"Joint {i+1}")
+        if i == 0: ax.legend()
+    plt.suptitle(f"Full Trial DDPM Inference: {random_trial[0].parent.name}", fontsize=16)
+    plt.tight_layout(); plt.savefig(results_dir /"full_trial_inference_concat.png"); plt.close()
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
     plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
     print(f"\n[FINISH] Résultats sauvegardés.{results_dir}")
+
+    # --- INFERENCE SUR TEST (FENÊTRE) ---
+    # print("[INF] Génération d'un exemple de test...")
+    # test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
+    # f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
+    # f_in = f_in.unsqueeze(0).to(device)
+    
+    # curr_j = torch.randn((1, 128, 29)).to(device)
+    # for t_idx in reversed(range(ddpm.n_steps)):
+    #     with torch.no_grad():
+    #         curr_j = ddpm.sample_reverse_selfs(model, curr_j, t_idx, f_in)
+
+    # pred = (curr_j.cpu().squeeze(0) * stats['j_s']) + stats['j_m']
+    # ref = (j_ref * stats['j_s']) + stats['j_m']
+
+    # ig, axes = plt.subplots(4, 3, figsize=(15, 12))
+    # for i, ax in enumerate(axes.flatten()):
+    #     ax.plot(ref[:, i], 'k--', label='Ref')
+    #     ax.plot(pred[:, i], 'r', label='Pred')
+    #     ax.set_title(f"Joint {i+1}")
+    #     ax.legend()
+
+    # plt.tight_layout()
+    # plt.savefig(results_dir / "inference_test_joints_1_12.png")
+    # plt.close()
+
+    # fig, axes = plt.subplots(6, 3, figsize=(15, 18))  # 18 slots (17 utilisés)
+
+    # for i, ax in enumerate(axes.flatten()):
+    #     j_idx = i + 12
+    #     if j_idx >= 29:
+    #         ax.axis('off')
+    #         continue
+
+    #     ax.plot(ref[:, j_idx], 'k--', label='Ref')
+    #     ax.plot(pred[:, j_idx], 'r', label='Pred')
+    #     ax.set_title(f"Joint {j_idx+1}")
+    #     ax.legend()
+
+    # plt.tight_layout()
+    # plt.savefig(results_dir / "inference_test_joints_13_29.png")
+    # plt.close()
+
+    # # --- INFERENCE COMPLÈTE ---
+    # print("\n[INF] Inférence sur un essai COMPLET...")
+    # test_pairs = get_pairs(test_subs)
+    # random_trial = random.choice(test_pairs)
+    # print("random_trial for test", random_trial)
+    # ref_full, pred_full = predict_full_trial(model, ddpm, random_trial[0], random_trial[1], stats, device)
+
+    # plot_joints(ref_full, pred_full, 0, 12, results_dir/"fig1.png")
+    # plot_joints(ref_full, pred_full, 12, 29, results_dir/"fig2.png")
+    
+    # plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
+    # plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
+    # print(f"\n[FINISH] Résultats sauvegardés.{results_dir}")
 
 if __name__ == "__main__":
     run_experiment()
