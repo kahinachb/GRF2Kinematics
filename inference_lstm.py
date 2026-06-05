@@ -17,7 +17,7 @@ def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size
     
     # 1. Load data
     f_raw = np.load(f_path).astype(np.float32)
-    j_raw = np.load(j_path).astype(np.float32)[:, 7:19] # Focus bas du corps
+    j_raw = np.load(j_path).astype(np.float32)[:, 6:18] # Focus bas du corps
     f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]    # Filtrage des 12 forces/moments
     T = len(f_raw)
     
@@ -98,8 +98,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3/4] Locating data files...")
     subject_dir = Path(data_root) / subject_name
     data_path = subject_dir / trial_name
-    f_path = data_path / "kinetics.npy"
-    j_path = data_path / "joints.npy"
+    f_path = data_path / "kinetics_feet.npy"
+    j_path = data_path / "all_joints.npy"
     
     if not f_path.exists(): raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists(): raise FileNotFoundError(f"Joints file not found: {j_path}")
@@ -189,10 +189,10 @@ if __name__ == "__main__":
     TRIAL_NAME = "squat"     
 
     # Mets à jour ces chemins selon où ton entraînement a sauvegardé les fichiers !
-    MODEL_PATH = "./results_lstm_HUMpf_weight_seg/bilstm_best_model.pth"
-    SCALERS_PATH = "./results_lstm_HUMpf_weight_seg/scalers_concat.json"
-    DATA_ROOT = "processed_data_pf_HUM"
-    OUTPUT_DIR = "./results_lstm_HUMpf_weight_seg"
+    MODEL_PATH = "./results_lstm_HUMfeet_weight_seg/bilstm_best_model.pth"
+    SCALERS_PATH = "./results_lstm_HUMfeet_weight_seg/scalers_concat.json"
+    DATA_ROOT = "processed_data_feet_HUM"
+    OUTPUT_DIR = "./results_lstm_HUMfeet_weight_seg"
     
     run_inference(
         subject_name=SUBJECT_NAME,

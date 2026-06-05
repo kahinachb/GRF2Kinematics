@@ -19,7 +19,7 @@ class BiomechDiffusionDataset(Dataset):
         self.window_size = window_size # Sauvegarde pour getitem
         for f_path, j_path, weight in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
-            j_data = j_data[:, 7:19] # lower body joints
+            j_data = j_data[:, 6:18] # lower body joints
             f_data = f_data[:, [0,1,2,3,4,5,9,10,11,12,13,14]] #forces and moments (right and left) ignore cop
             
             # CORRECTION 1 : Many-to-one et stride de 1
@@ -51,7 +51,7 @@ def compute_and_save_stats(file_list, save_path):
     
 
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
-    j_cat= j_cat[:, 7:19]
+    j_cat= j_cat[:, 6:18]
     f_cat = f_cat[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
             
     a_cat = np.vstack(all_a)
@@ -92,7 +92,7 @@ class BiLSTM_MLP(nn.Module):
 def predict_full_trial_padding(model, f_path, j_path, anchor, stats, device, window_size=40):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    j_raw = np.load(j_path).astype(np.float32)[:, 7:19]
+    j_raw = np.load(j_path).astype(np.float32)[:, 6:18]
     f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
     T = len(f_raw)
     
@@ -123,7 +123,7 @@ def predict_full_trial_padding(model, f_path, j_path, anchor, stats, device, win
 def predict_full_trial(model, f_path, j_path, anchor, stats, device, window_size=40):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    j_raw = np.load(j_path).astype(np.float32)[:, 7:19]
+    j_raw = np.load(j_path).astype(np.float32)[:, 6:18]
     f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
     T = len(f_raw)
     

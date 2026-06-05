@@ -17,8 +17,8 @@ import numpy as np
 from utils.viz_utils import add_sphere, place,set_tf, safe_place
 from utils.model_utils import get_foot_pose
 import matplotlib.pyplot as plt
-subject = 'Jeremy'
 
+subject = 'Jeremy'
 task = 'Trial111'
 which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
@@ -31,34 +31,34 @@ meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0
          'right_foot_0','left_foot_0']
 
 
-path_joint = f"DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
+path_joint = f"DATA/generated_data/subject_01_squat_variant_000_dz+0.025_dx+0.050_dy+0.025_q.csv"
 q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 
-cop_csv = f"DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/kinetics_glob_filtered_squat_variant_154_dz-0.135_dx-0.019_dy-0.003.csv"
+cop_csv = f"DATA/generated_data/subject_01_squat_variant_000_dz+0.025_dx+0.050_dy+0.025_grfm.csv"
 df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 pelvis =False
    
 
-Fx1 = df_cop[find_col(df_cop, "Fx1")]
-Fy1 = df_cop[find_col(df_cop, "Fy1")]
-Fz1 = df_cop[find_col(df_cop, "Fz1")]
-Mx1 = df_cop[find_col(df_cop, "Mx1")]
-My1 = df_cop[find_col(df_cop, "My1")]
-Mz1 = df_cop[find_col(df_cop, "Mz1")]
-copx1 = df_cop[find_col(df_cop, "COPx1")]
-copy1 = df_cop[find_col(df_cop, "COPy1")]
-copz1 = df_cop[find_col(df_cop, "COPz1")]
+Fx1 = df_cop[find_col(df_cop, "Fx1_glob")]
+Fy1 = df_cop[find_col(df_cop, "Fy1_glob")]
+Fz1 = df_cop[find_col(df_cop, "Fz1_glob")]
+Mx1 = df_cop[find_col(df_cop, "Mx1_glob")]
+My1 = df_cop[find_col(df_cop, "My1_glob")]
+Mz1 = df_cop[find_col(df_cop, "Mz1_glob")]
+copx1 = df_cop[find_col(df_cop, "COPx1_glob")]
+copy1 = df_cop[find_col(df_cop, "COPy1_glob")]
+copz1 = df_cop[find_col(df_cop, "COPz1_glob")]
 
-Fx2 = df_cop[find_col(df_cop, "Fx2")]
-Fy2 = df_cop[find_col(df_cop, "Fy2")]
-Fz2 = df_cop[find_col(df_cop, "Fz2")]
-Mx2 = df_cop[find_col(df_cop, "Mx2")]
-My2 = df_cop[find_col(df_cop, "My2")]
-Mz2 = df_cop[find_col(df_cop, "Mz2")]
-copx2 = df_cop[find_col(df_cop, "COPx2")]
-copy2 = df_cop[find_col(df_cop, "COPy2")]
-copz2 = df_cop[find_col(df_cop, "COPz2")]
+Fx2 = df_cop[find_col(df_cop, "Fx2_glob")]
+Fy2 = df_cop[find_col(df_cop, "Fy2_glob")]
+Fz2 = df_cop[find_col(df_cop, "Fz2_glob")]
+Mx2 = df_cop[find_col(df_cop, "Mx2_glob")]
+My2 = df_cop[find_col(df_cop, "My2_glob")]
+Mz2 = df_cop[find_col(df_cop, "Mz2_glob")]
+copx2 = df_cop[find_col(df_cop, "COPx2_glob")]
+copy2 = df_cop[find_col(df_cop, "COPy2_glob")]
+copz2 = df_cop[find_col(df_cop, "COPz2_glob")]
 
 
 
@@ -219,17 +219,17 @@ for i in range(len(q_ref)):
     M_p2 = R_pelvis_world @ (M_world2 - np.cross(pos_bassin, F_world2))
 
     ###cop world 
-    cop_x1 = -M_world1[1] / F_world1[2]
-    cop_y1 = M_world1[0] / F_world1[2]
-    cop_z1 = 0.0
-    cop_x2 = -M_world2[1] / F_world2[2]
-    cop_y2 =  M_world2[0] / F_world2[2]
-    cop_z2 = 0.0
-    cop_world1 = np.array([cop_x1, cop_y1, cop_z1])
-    cop_world2 = np.array([cop_x2, cop_y2, cop_z2])
+    # cop_x1 = -M_world1[1] / F_world1[2]
+    # cop_y1 = M_world1[0] / F_world1[2]
+    # cop_z1 = 0.0
+    # cop_x2 = -M_world2[1] / F_world2[2]
+    # cop_y2 =  M_world2[0] / F_world2[2]
+    # cop_z2 = 0.0
+    # cop_world1 = np.array([cop_x1, cop_y1, cop_z1])
+    # cop_world2 = np.array([cop_x2, cop_y2, cop_z2])
     #from file 
-    # cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
-    # cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
+    cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
+    cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
 
     ##cop local 
     cop_p1 = R_pelvis_world @ (cop_world1 - pos_bassin)

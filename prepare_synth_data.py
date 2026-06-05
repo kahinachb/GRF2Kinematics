@@ -6,10 +6,9 @@ import pandas as pd
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 
-# Colonnes attendues dans tes CSV de sortie "feet_frame" (Right=1, Left=2)
 KINETICS_COLS = [
-    'Fx1', 'Fy1', 'Fz1', 'Mx1', 'My1', 'Mz1', 'COPx1', 'COPy1', 'COPz1',
-    'Fx2', 'Fy2', 'Fz2', 'Mx2', 'My2', 'Mz2', 'COPx2', 'COPy2', 'COPz2'
+    'Fx1_glob', 'Fy1_glob', 'Fz1_glob', 'Mx1_glob', 'My1_glob', 'Mz1_glob', 'COPx1_glob', 'COPy1_glob', 'COPz1_glob',
+    'Fx2_glob', 'Fy2_glob', 'Fz2_glob', 'Mx2_glob', 'My2_glob', 'Mz2_glob', 'COPx2_glob', 'COPy2_glob', 'COPz2_glob'
 ]
 
 # Réorganisation demandée des Joints (Freeflyer -> Right Leg -> Left Leg -> Upper Body)
@@ -27,12 +26,12 @@ JOINTS_REORDER = [
 def process_folder_to_local_delta(input_folder, output_base):
     input_path = Path(input_folder)
     output_path = Path(output_base)
-    joint_files = glob.glob(str(input_path / "joint_filtered_*.csv"))
+    joint_files = glob.glob(str(input_path / "*q.csv"))
     
     for j_file in joint_files:
-        trial_id = os.path.basename(j_file).replace("joint_filtered_", "").replace(".csv", "")
-        k_file = input_path / f"feet_frame_{trial_id}.csv"
-        
+        trial_id = os.path.basename(j_file).replace("_q", "").replace(".csv", "")
+        k_file = input_path / f"{trial_id}_grfm.csv"
+        print(k_file)
         if not k_file.exists(): continue
         
         trial_dir = output_path / trial_id
@@ -163,9 +162,9 @@ def process_folder(input_folder, output_base):
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/generated_human_like_motions_csv/generated_human_like_motions_csv"
+    IN_FOLDER = "DATA/generated_data"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/synth_npy/s1_deltaf"
+    OUT_FOLDER = "DATA/synth_npy_all"
     
     process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER)
     print("\n--- Opération terminée ---")
