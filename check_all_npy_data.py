@@ -29,7 +29,7 @@ def analyze_hybrid_structure(output_dir: str):
         # --- LOGIQUE DE DÉTERMINATION DE LA FRÉQUENCE ---
         if filename == "forces_300.npy":
             fs = 300
-        elif filename == "kinetics.npy":
+        elif filename == "kinetics_deltaf.npy":
             if "subject" in subject_name.lower():
                 fs = 100
             else:
@@ -39,15 +39,17 @@ def analyze_hybrid_structure(output_dir: str):
 
         # Chargement léger des métadonnées
         try:
+            print(file_path)
             data = np.load(file_path, mmap_mode='r')
+            
             n_steps = data.shape[0]
             duration = n_steps / fs
-            
+
             results[fs]["steps"] += n_steps
             results[fs]["files"] += 1
             results[fs]["durations"].append(duration)
-
-            # print(f"{subject_name[:12]:<12} | {trial_dir.name[:20]:<20} | {filename:<16} |{n_steps} |{fs:<6} | {duration:.2f}s")
+            
+            print(f"{subject_name[:12]:<12} | {trial_dir.name[:20]:<20} | {filename:<16} |{n_steps} |{fs:<6} | {duration:.2f}s")
 
             # print(f"   -> Exemple première ligne : {data[0]}")
 
@@ -55,7 +57,7 @@ def analyze_hybrid_structure(output_dir: str):
             # print(f"Forces shape : {data.shape}")
             # print(f"Forces dtype : {data.dtype}")
 
-            joints_path = trial_dir / "all_joints.npy"
+            # joints_path = trial_dir / "all_joints_deltaf.npy"
             # if joints_path.exists():
             #     joints_data = np.load(joints_path, mmap_mode='r')
             #     # print(f"   -> Exemple première ligne : {joints_data[0]}")
@@ -65,7 +67,7 @@ def analyze_hybrid_structure(output_dir: str):
 
 
         except Exception as e:
-            print(f"Erreur lecture {file_path.name} dans {subject_name}: {e}")
+            print(f"Erreur lecture {file_path} dans {subject_name}: {e}")
 
     # --- SYNTHÈSE FINALE ---
     print("\n" + "="*60)
@@ -87,4 +89,4 @@ def analyze_hybrid_structure(output_dir: str):
     print(f"TOTAL GLOBAL : {results[300]['files'] + results[100]['files']} fichiers analysés.")
 
 if __name__ == "__main__":
-    analyze_hybrid_structure("./processed_data_feet")
+    analyze_hybrid_structure("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all")

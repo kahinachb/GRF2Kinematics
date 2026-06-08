@@ -22,8 +22,7 @@ def apply_butterworth_filter(data, cutoff, fs, order):
     else:
         print("Attention : données trop courtes pour être filtrées.")
         return data
-    
-path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_lstm_HUMpf_weight_seg/Thomas_squat_bilstm_prediction.csv"
+path_joint_pred = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_lstm_HUMpf_weight_seg_adamw/Thomas_squat_bilstm_prediction.csv"
 path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/HUMANOIDS/Thomas/squat_joints.csv"
 
 dofs = [

@@ -9,8 +9,55 @@ import math
 # ==========================================
 # 1. CFM INFERENCE FUNCTION (SLIDING WINDOW)
 # ==========================================
+def predict_full_trial(model, f_path, j_path,weight, stats, device, window_size=128, stride=64, steps=25):
+    model.eval()
+    f_raw = np.load(f_path).astype(np.float32)
+    j_raw = np.load(j_path).astype(np.float32)
+    j_raw = j_raw[:, 6:18] # Focus bas du corps
+    # f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
 
-def predict_full_trial(model, f_path, j_path, stats, device, 
+    # ---> ADDED: Format weight for inference <---
+    a_tensor = torch.tensor(weight, dtype=torch.float32) # 'weight' here is the 8D list from your random_trial
+    a_norm = (a_tensor - stats['a_m']) / (stats['a_s'] + 1e-6)
+    w_tensor = a_norm.unsqueeze(0).to(device) # Adds batch dimension: shape becomes [1, 8]
+
+    f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+    
+    T = f_norm.shape[0]
+    full_pred = torch.zeros((T, 12)).to(device)
+    count_map = torch.zeros((T, 12)).to(device)
+
+    print(f"  [INF] Sampling CFM (Euler) sur essai complet ({T} frames)...")
+    
+    dt = 1.0 / steps
+
+    for start in range(0, T - window_size, stride):
+        end = start + window_size
+        f_win = f_norm[start:end].unsqueeze(0).to(device)
+        
+        # 1. Départ du bruit pur (x_0) à t=0
+        curr_x = torch.randn((1, window_size, 12)).to(device)
+        
+        # 2. Intégration d'Euler (Flow Matching Inference)
+        for i in range(steps):
+            t_val = i / steps
+            t = torch.ones((1,), device=device) * t_val
+            
+            with torch.no_grad():
+                # Le modèle prédit la vitesse (v)
+                v = model(curr_x, t, f_win, w_tensor)
+                
+            # x_{t+dt} = x_t + v * dt
+            curr_x = curr_x + v * dt
+        
+        full_pred[start:end] += curr_x.squeeze(0)
+        count_map[start:end] += 1.0
+
+    final_pred = full_pred / torch.clamp(count_map, min=1.0)
+    final_pred = (final_pred.cpu() * stats['j_s']) + stats['j_m']
+    return j_raw, final_pred.numpy()
+
+def predict_full_trial_out_w_seg(model, f_path, j_path, stats, device, 
                        window_size=128, stride=64, inference_steps=25):
     """
     Generate predictions for a full trial using Flow Matching (Euler ODE integration).
@@ -115,7 +162,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         device = time.device
         half_dim = self.dim // 2
         embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = torch.exp(torch.arange(half_dim, device=device, dtype=torch.float32) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
@@ -123,6 +170,65 @@ class SinusoidalTimeEmbeddings(nn.Module):
 
 class DiffusionTransformer(nn.Module):
     def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+        self.joint_embed = nn.Linear(joint_dim, embed_dim) 
+        self.force_embed = nn.Linear(force_dim, embed_dim)
+        
+        self.anthro_embed = nn.Sequential(
+            nn.Linear(5, embed_dim), 
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+
+        self.time_mlp = nn.Sequential(
+            SinusoidalTimeEmbeddings(embed_dim),
+            nn.Linear(embed_dim, embed_dim),
+            nn.SiLU(),
+            nn.Linear(embed_dim, embed_dim)
+        ) 
+        
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=1000) 
+        
+        # ---> CHANGED: Encoder to Decoder for Cross-Attention <---
+        layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=nhead, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
+        
+        self.output_layer = nn.Linear(embed_dim, joint_dim)
+
+    def forward(self, x, t, cond,weight):
+
+        if isinstance(t, (int, float)):
+            t = torch.tensor([t], device=x.device, dtype=torch.float32).expand(x.shape[0])
+        elif t.dim() == 0:
+            t = t.unsqueeze(0).expand(x.shape[0])
+            
+        # Optionnel mais recommandé : On "étire" t pour l'embedding sinusoidal
+        t_input = t * 1000.0
+        # Process Time Embedding
+        t_emb = self.time_mlp(t_input).unsqueeze(1) 
+        
+        # 3. Process Target Sequence (Noisy Joints + Time + Position)
+        x_emb = self.joint_embed(x) + t_emb 
+        x_emb = self.pos_encoder(x_emb) 
+        
+        # Process Memory Sequence (Forces + Position)
+        # Note: Time-series forces also need positional awareness!
+        #Process weight and add it to forces <---
+        cond_emb = self.force_embed(cond)          # Shape: [Batch, SeqLen, EmbedDim]
+        a_emb = self.anthro_embed(weight)          # Shape: [Batch, EmbedDim]
+        a_emb = a_emb.unsqueeze(1)                 # Shape: [Batch, 1, EmbedDim]
+        
+        # Broadcasting adds the subject's weight embedding to every frame
+        cond_emb = cond_emb + a_emb 
+        cond_emb = self.pos_encoder(cond_emb)
+
+        # Transformer Decoder (tgt=Joints, memory=Forces)
+        out = self.transformer(tgt=x_emb, memory=cond_emb)
+        
+        return self.output_layer(out)
+    
+class DiffusionTransformer_out_(nn.Module):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=4):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -192,7 +298,20 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     f_path = data_path / "kinetics_feet.npy"
     j_path = data_path / "all_joints.npy"
-    
+    y =  Path(data_root) / subject_name
+    yaml_path  = y /f"{subject_name}.yaml"
+    import yaml
+    with open(yaml_path, 'r') as f:
+                    yd = yaml.safe_load(f)
+                    if 'weight_kg' in yd:
+                        anthro_data = [
+                            float(yd['weight_N']),
+                            float(yd['left_femur_mm']),
+                            float(yd['left_tibia_mm']),
+                            float(yd['right_femur_mm']),
+                            float(yd['right_tibia_mm']),
+                        ]
+
     if not f_path.exists(): raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists(): raise FileNotFoundError(f"Joints file not found: {j_path}")
     print(f"  ✓ Found forces: {f_path}\n  ✓ Found joints: {j_path}")
@@ -200,10 +319,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # ===== 4. RUN INFERENCE =====
     print("\n[4/4] Running CFM inference...")
     # Changement majeur : inference_steps=25 au lieu de 1000 (Gain de vitesse x40 !)
-    j_ref, j_pred = predict_full_trial(
-        model, f_path, j_path, stats, device,
-        window_size=128, stride=64, inference_steps=25
-    )
+    # j_ref, j_pred = predict_full_trial(
+    #     model, f_path, j_path, stats, device,
+    #     window_size=128, stride=64, inference_steps=25
+    # )
+
+    j_ref, j_pred = predict_full_trial(model, f_path, j_path, anthro_data, stats, device, steps=25)
+
     
     # ===== 5. SAVE RESULTS =====
     output_path = Path(output_dir)
@@ -260,13 +382,13 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
 if __name__ == "__main__":
     
-    SUBJECT_NAME = "Kahina"     
+    SUBJECT_NAME = "Thanh"     
     TRIAL_NAME = "squat"     
 
-    MODEL_PATH = "./results_FM_HUM/cfm_best_model.pth"
-    SCALERS_PATH = "./results_FM_HUM/scalers_concat.json"
+    MODEL_PATH = "./results_FM_HUMCOP_weight_seg/cfm_best_model.pth"
+    SCALERS_PATH = "./results_FM_HUMCOP_weight_seg/scalers_concat.json"
     DATA_ROOT = "processed_data_feet_HUM"
-    OUTPUT_DIR = "./inference_results_CFM_HUM"
+    OUTPUT_DIR = "./results_FM_HUMCOP_weight_seg"
     
     run_inference(
         subject_name=SUBJECT_NAME,

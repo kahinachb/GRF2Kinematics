@@ -20,9 +20,27 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 from utils.utils import find_col
 
+kinetics="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/wrench_total_world_with_cop.csv"
+df_cop = pd.read_csv(kinetics)
+X = df_cop[find_col(df_cop, "COPx_glob")]
+Y = df_cop[find_col(df_cop, "COPy_glob")]
+Z = df_cop[find_col(df_cop, "COPz_glob")]
+cop = np.stack([X, Y, Z], axis=1)
 
-urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf_scaled/Vinc/Subject1_scaled.urdf"# Human base
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/manip_marie_q.csv"
+kinetics_both="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/grfm_both_feet_with_cop.csv"
+_both = pd.read_csv(kinetics_both)
+X1 = _both[find_col(_both, "COPx1_glob")]
+Y1 = _both[find_col(_both, "COPy1_glob")]
+Z1 = _both[find_col(_both, "COPz1_glob")]
+cop1 = np.stack([X1, Y1, Z1], axis=1)
+X2 = _both[find_col(_both, "COPx2_glob")]
+Y2 = _both[find_col(_both, "COPy2_glob")]
+Z2 = _both[find_col(_both, "COPz2_glob")]
+cop2 = np.stack([X2, Y2, Z2], axis=1)
+
+
+urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf/human_subject_10.urdf"# Human base
+path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/q.csv"
 q_ref_df = pd.read_csv(path_joint)
 q_ref = q_ref_df.to_numpy(dtype=float)
 urdf_name = "human.urdf"
@@ -33,10 +51,7 @@ print(model_h.gravity)
 
 data_h = model_h.createData()
 
-df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/augmented_markers_2.csv")
 
-mks_dict, start_sample_dict = read_mks_data(df, start_sample=0, converter=1000.0)
-mks_names = start_sample_dict.keys()
 import meshcat.geometry as g
 
 #Meshcat
@@ -62,6 +77,11 @@ native_viz["/Grid"].set_transform(
     np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, grid_height], [0, 0, 0, 1]])
 )
 
+add_sphere(viewer, "world/cop_global", radius=0.015, color=0x0000FF)  
+
+add_sphere(viewer, "world/cop1", radius=0.015, color=0xFF0000)  
+add_sphere(viewer, "world/cop2", radius=0.015, color=0x00FF00)  
+
 
 q0 = pin.neutral(model_h)
 viz_human.display(q0)
@@ -71,20 +91,17 @@ R1 = data_h.oMf[model_h.getJointId('root_joint')].rotation
 
 n_samples = len(q_ref)
 
-
-
-for name in mks_names:
-
-    add_sphere(viewer, f"world/{name}", radius=0.01, color=0xff0000)
+angle = -np.pi / 2 
+R_corr = np.array([[1, 0,           0          ],
+                   [0, np.cos(angle), -np.sin(angle)],
+                   [0, np.sin(angle),  np.cos(angle)]])
 
 
 for i in range(len(q_ref)):
+    print(cop[i])
 
-    for i, frame in enumerate(mks_dict):
-    
-        for name in mks_names:
-            pos = frame[name].reshape(3,)
-            place(viewer, name, pos)
+    safe_place(viewer, "cop_global", cop[i])
+    safe_place(viewer, "cop1", cop1[i])
+    safe_place(viewer, "cop2", cop2[i])
 
-            viz_human.display(q_ref[i])
-            input()
+    viz_human.display(q_ref[i])

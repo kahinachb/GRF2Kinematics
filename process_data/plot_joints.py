@@ -2,14 +2,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Charger le fichier
-df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Christine/Trial110/joints_filtered.csv")
+df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_q.csv")
 
 
 # -------------------------
 # GROUPES
 # -------------------------
-
-group1 = ["delta_x","delta_y","delta_z","delta_rx","delta_ry","delta_rz"]
+group1 = ['FF_X','FF_Y','FF_Z','FF_quatx','FF_quaty','FF_quatz','FF_quatw']
+# group1 = ["delta_x","delta_y","delta_z","delta_rx","delta_ry","delta_rz"]
 # group1 = ["root_joint","root_joint.1","root_joint.2",
                 #  "root_joint.3","root_joint.4","root_joint.5","root_joint.6"]
 group2 = [

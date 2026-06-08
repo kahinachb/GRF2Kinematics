@@ -38,6 +38,7 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device,
     j_raw = np.load(j_path).astype(np.float32)
 
     j_raw = j_raw[:, 6:18]
+    f_raw = f_raw[:, [0,1,2,3,4,5,9,10,11,12,13,14]]
  
     # Normalize forces
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -108,13 +109,13 @@ class SinusoidalTimeEmbeddings(nn.Module):
         device = time.device
         half_dim = self.dim // 2
         embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = torch.exp(torch.arange(half_dim, device=device, dtype=torch.float32) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
 
 class DiffusionTransformer(nn.Module):
-    def __init__(self, joint_dim=12, force_dim=18, embed_dim=256, nhead=8, num_layers=4):
+    def __init__(self, joint_dim=12, force_dim=12, embed_dim=256, nhead=8, num_layers=2):
         super().__init__()
         self.joint_embed = nn.Linear(joint_dim, embed_dim) 
         self.force_embed = nn.Linear(force_dim, embed_dim)
@@ -292,15 +293,15 @@ if __name__ == "__main__":
     # SUBJECT_NAME = "s1"     
     # TRIAL_NAME = "squat_variant_980_dz-0.080_dx+0.023_dy-0.017"     
 
-    SUBJECT_NAME = "Kahina"     
+    SUBJECT_NAME = "Thomas"     
     TRIAL_NAME = "squat"           
           
     
-    MODEL_PATH = "./results_PE_sin_cross_real_selfs/diffusion_biomech_model_best.pth"
-    SCALERS_PATH = "./results_PE_sin_cross_real_selfs/scalers_concat.json"
-    DATA_ROOT = "./processed_data_feet"
+    MODEL_PATH = "./results_diff_HUM_selfs/diffusion_biomech_model_best.pth"
+    SCALERS_PATH = "./results_diff_HUM_selfs/scalers_concat.json"
+    DATA_ROOT = "./processed_data_feet_HUM"
     # DATA_ROOT = "/datasets/GRF2Kine/synth_npy"
-    OUTPUT_DIR = "./inference_results_PE_sin_cross_real_selfs"
+    OUTPUT_DIR = "./results_diff_HUM_selfs"
     # 
     # ===== RUN INFERENCE =====
     run_inference(
