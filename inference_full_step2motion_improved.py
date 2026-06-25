@@ -17,10 +17,10 @@ def predict_full_trial(model, ddpm, f_path, j_path, stats, device, window_size=1
     """
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    # f_raw = np.concatenate(
-    # [f_raw[:,-9:], f_raw[:, :9]],
-    # axis=1
-    #         )   
+    f_raw = np.concatenate(
+    [f_raw[:,-9:], f_raw[:, :9]],
+    axis=1
+            )   
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -109,115 +109,91 @@ class SinusoidalTimeEmbeddings(nn.Module):
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
-class DiffusionTransformer(nn.Module):
-    def __init__(self, embed_dim=256, nhead=8, num_layers=2):
-        super().__init__()
 
-        # ==========================================
-        # 1. BODY PARTITIONING (Cibles / Postures)
-        # ==========================================
-        # Right Leg (6), Left Leg (6), Upper Body (17) -> Total 29
+ 
+class DiffusionTransformer(nn.Module):
+    def __init__(self, embed_dim=256, nhead=8, num_layers=4):
+        super().__init__()
+ 
+        # --- Partitionnement corps (cibles) : Rleg(6), Lleg(6), Upper(17) = 29 ---
         self.embed_Rleg = nn.Linear(6, embed_dim)
         self.embed_Lleg = nn.Linear(6, embed_dim)
         self.embed_Upper = nn.Linear(17, embed_dim)
-        
-        # ==========================================
-        # 2. SENSOR PARTITIONING (Mémoire / Plateformes)
-        # ==========================================
-        # Right: F(3), M(3), CoP(3) | Left: F(3), M(3), CoP(3) -> Total 18
+ 
+        # --- Partitionnement capteurs (mémoire) : R{F,M,CoP} + L{F,M,CoP} = 18 ---
         self.embed_F_R = nn.Linear(3, embed_dim)
         self.embed_M_R = nn.Linear(3, embed_dim)
         self.embed_CoP_R = nn.Linear(3, embed_dim)
-        
         self.embed_F_L = nn.Linear(3, embed_dim)
         self.embed_M_L = nn.Linear(3, embed_dim)
         self.embed_CoP_L = nn.Linear(3, embed_dim)
-
+ 
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbeddings(embed_dim),
             nn.Linear(embed_dim, embed_dim),
             nn.SiLU(),
-            nn.Linear(embed_dim, embed_dim)
-        ) 
-        
-        # On augmente le max_len car notre séquence concaténée sera plus longue (jusqu'à 6*W)
-        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=2000) 
-        
-        layer = nn.TransformerDecoderLayer(
-            d_model=embed_dim, 
-            nhead=nhead, 
-            dim_feedforward=512,   
-            activation="gelu",    
-            batch_first=True, 
-            norm_first=True, 
-            dropout=0.25
+            nn.Linear(embed_dim, embed_dim),
         )
-        self.transformer = nn.TransformerDecoder(layer, num_layers=2)
-        
-        # Output projections pour reconstituer les 29 joints
+ 
+        # PE appliqué PAR BLOC (longueur W) -> max_len doit juste être >= window_size
+        self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=2000)
+ 
+        # --- Embeddings de segment appris ---
+        # 3 segments cibles (Rleg, Lleg, Upper), 6 segments capteurs (FR,MR,CoPR,FL,ML,CoPL)
+        self.seg_target = nn.Parameter(torch.randn(3, embed_dim) * 0.02)
+        self.seg_cond = nn.Parameter(torch.randn(6, embed_dim) * 0.02)
+ 
+        layer = nn.TransformerDecoderLayer(
+            d_model=embed_dim,
+            nhead=nhead,
+            dim_feedforward=512,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            dropout=0.1,                       # 0.25 -> 0.1
+        )
+        self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)  # num_layers effectif
+ 
         self.out_Rleg = nn.Linear(embed_dim, 6)
         self.out_Lleg = nn.Linear(embed_dim, 6)
         self.out_Upper = nn.Linear(embed_dim, 17)
-
+ 
     def forward(self, x, t, cond):
         B, W, _ = x.shape
-        
-        # 1. Time Embedding
+ 
+        # 1. Time embedding (global, broadcast sur toutes les positions)
         if isinstance(t, (int, float)):
             t = torch.tensor([t], device=x.device, dtype=torch.long).expand(x.shape[0])
         elif t.dim() == 0:
             t = t.unsqueeze(0).expand(x.shape[0])
-        t_emb = self.time_mlp(t).unsqueeze(1) 
-        
-        # ==========================================
-        # 2. TARGET: Découpage de la Posture (x)
-        # ==========================================
-        # Indexation basée sur ta liste de 29 joints
-        x_R = x[:, :, 0:6]
-        x_L = x[:, :, 6:12]
-        x_U = x[:, :, 12:29]
-        
-        emb_R = self.embed_Rleg(x_R)
-        emb_L = self.embed_Lleg(x_L)
-        emb_U = self.embed_Upper(x_U)
-        
-        # Concaténation temporelle -> Forme: (B, 3*W, embed_dim)
-        x_emb = torch.cat([emb_R, emb_L, emb_U], dim=1)
-        x_emb = x_emb + t_emb
-        x_emb = self.pos_encoder(x_emb) 
-        
-        # ==========================================
-        # 3. MEMORY: Découpage des Forces (cond)
-        # ==========================================
-        # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:9), L_F(9:12), L_M(12:15), L_CoP(15:18)
-        emb_FR = self.embed_F_R(cond[:, :, 0:3])
-        emb_MR = self.embed_M_R(cond[:, :, 3:6])
-        emb_CoPR = self.embed_CoP_R(cond[:, :, 6:9])
-        
-        emb_FL = self.embed_F_L(cond[:, :, 9:12])
-        emb_ML = self.embed_M_L(cond[:, :, 12:15])
-        emb_CoPL = self.embed_CoP_L(cond[:, :, 15:18])
-        
-        # Concaténation temporelle -> Forme: (B, 6*W, embed_dim)
-        cond_emb = torch.cat([emb_FR, emb_MR, emb_CoPR, emb_FL, emb_ML, emb_CoPL], dim=1)
-        cond_emb = cond_emb + t_emb
-        cond_emb = self.pos_encoder(cond_emb)
-        
-        # ==========================================
-        # 4. Attention Croisée Multi-Modalités
-        # ==========================================
-        # Le transformer gère automatiquement le croisement des 3 blocs corporels avec les 6 blocs capteurs
+        t_emb = self.time_mlp(t).unsqueeze(1)  # (B, 1, D)
+ 
+        # 2. TARGET : 3 blocs corporels -> PE temporel commun + segment embedding
+        emb_R = self.pos_encoder(self.embed_Rleg(x[:, :, 0:6]))   + self.seg_target[0]
+        emb_L = self.pos_encoder(self.embed_Lleg(x[:, :, 6:12]))  + self.seg_target[1]
+        emb_U = self.pos_encoder(self.embed_Upper(x[:, :, 12:29])) + self.seg_target[2]
+ 
+        x_emb = torch.cat([emb_R, emb_L, emb_U], dim=1) + t_emb   # (B, 3W, D)
+ 
+        # 3. MEMORY : 6 blocs capteurs -> PE temporel commun + segment embedding
+        cond_blocks = [
+            self.embed_F_R(cond[:, :, 0:3]),
+            self.embed_M_R(cond[:, :, 3:6]),
+            self.embed_CoP_R(cond[:, :, 6:9]),
+            self.embed_F_L(cond[:, :, 9:12]),
+            self.embed_M_L(cond[:, :, 12:15]),
+            self.embed_CoP_L(cond[:, :, 15:18]),
+        ]
+        cond_blocks = [self.pos_encoder(b) + self.seg_cond[i] for i, b in enumerate(cond_blocks)]
+        cond_emb = torch.cat(cond_blocks, dim=1) + t_emb          # (B, 6W, D)
+ 
+        # 4. Attention croisée multi-modalités
         out = self.transformer(tgt=x_emb, memory=cond_emb)
-        
-        # ==========================================
-        # 5. Reconstruction
-        # ==========================================
-        # On redécoupe la sortie (B, 3*W, embed_dim) en 3 blocs de taille W
+ 
+        # 5. Reconstruction des 29 DoF
         out_R = self.out_Rleg(out[:, 0:W, :])
         out_L = self.out_Lleg(out[:, W:2*W, :])
         out_U = self.out_Upper(out[:, 2*W:3*W, :])
-        
-        # On reforme le vecteur final de 29 DoFs
         return torch.cat([out_R, out_L, out_U], dim=2)
 
 # ==========================================
@@ -255,7 +231,9 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # ===== 2. LOAD MODEL =====
     print("\n[2/5] Loading model...")
     model = DiffusionTransformer().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    ckpt = torch.load(model_path, map_location=device)
+    model.load_state_dict(ckpt["model"])
+
     model.eval()
     print(f"  ✓ Loaded model from {model_path}")
     
@@ -269,11 +247,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # data_path = Path(data_root) / subject_name / trial_name
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    # f_path = data_path / "kinetics_glob.npy"
-    # j_path = data_path / "all_joints.npy"
+    f_path = data_path / "kinetics_glob.npy"
+    j_path = data_path / "all_joints.npy"
 
-    f_path = data_path / "kinetics_deltaf.npy"
-    j_path = data_path / "all_joints_deltaf.npy"
+    # f_path = data_path / "kinetics_deltaf.npy"
+    # j_path = data_path / "all_joints_deltaf.npy"
     
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -376,21 +354,21 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "Jeremy"     
-    # TRIAL_NAME = "Trial111"           
-          
-    # MODEL_PATH = "./results_full_step2motion_corr/diffusion_biomech_model_best.pth"
-    # SCALERS_PATH = "./results_full_step2motion_corr/scalers_concat.json"
-    # DATA_ROOT = "processed_data_feet"
-    # OUTPUT_DIR = "./results_full_step2motion_corr"
-
-    SUBJECT_NAME = "subject_01"     
-    TRIAL_NAME = "variant_860_dz-0.135_dx-0.025_dy+0.035"           
+    SUBJECT_NAME = "Jeremy"     
+    TRIAL_NAME = "Trial111"           
           
     MODEL_PATH = "./results_full_step2motion_corr_improved/diffusion_biomech_model_best.pth"
     SCALERS_PATH = "./results_full_step2motion_corr_improved/scalers_concat.json"
-    DATA_ROOT = "DATA/synth_npy_all"
+    DATA_ROOT = "processed_data_feet"
     OUTPUT_DIR = "./results_full_step2motion_corr_improved"
+
+    # SUBJECT_NAME = "subject_01"     
+    # TRIAL_NAME = "variant_860_dz-0.135_dx-0.025_dy+0.035"           
+          
+    # MODEL_PATH = "./results_full_step2motion_corr_improved/diffusion_biomech_model_best.pth"
+    # SCALERS_PATH = "./results_full_step2motion_corr_improved/scalers_concat.json"
+    # DATA_ROOT = "DATA/synth_npy_all"
+    # OUTPUT_DIR = "./results_full_step2motion_corr_improved"
     
     
     # ===== RUN INFERENCE =====

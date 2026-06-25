@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import torch.nn as nn
 import math
-
+import pandas as pd
 # ==========================================
 # 1. ARCHITECTURE (Flow Matching)
 # ==========================================
@@ -130,7 +130,6 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     
-    # Ta manipulation spécifique des forces
     f_raw = np.concatenate(
         [f_raw[:,-9:], f_raw[:, :9]],
         axis=1
@@ -176,7 +175,6 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
             
             x_t = x_t + v_pred * dt
         
-        # Nettoyage final pour le raccord
         if has_context:
             x_t[:, :overlap_size, :] = known_x1
             
@@ -218,11 +216,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    # f_path = data_path / "kinetics_glob.npy"
-    # j_path = data_path / "all_joints.npy"
+    f_path = data_path / "kinetics_glob.npy"
+    j_path = data_path / "all_joints.npy"
     
-    f_path = data_path / "kinetics_deltaf.npy"
-    j_path = data_path / "all_joints_deltaf.npy"
+    # f_path = data_path / "kinetics_deltaf.npy"
+    # j_path = data_path / "all_joints_deltaf.npy"
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
@@ -238,6 +236,36 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         window_size=128, stride=64, n_steps=20
     )
 
+    # ===== SAVE PREDICTION CSV =====
+
+    joint_names = [
+        "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
+        "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
+        "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
+        "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",
+
+        "Lumbar_flex_ext", "Lumbar_lateral_flex",
+        "Lcalvicule_x",
+        "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
+        "Lelbow_flex_ext", "Lelbow_pron_supi",
+
+        "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
+        "Rcalvicule_x",
+        "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
+        "Relbow_flex_ext", "Relbow_pron_supi"
+    ]
+
+    df_pred = pd.DataFrame(
+        j_preds,
+        columns=joint_names
+    )
+
+    csv_path = output_dir / f"{subject_name}_{trial_name}_prediction.csv"
+    df_pred.to_csv(csv_path, index=False)
+
+    print(f"  ✓ Prediction saved: {csv_path}")
+
+
     # ===== 5. EVALUATION =====
     print("\n[5/5] Evaluating and Plotting...")
 
@@ -250,55 +278,139 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== VISUALIZATION =====
     lower_names = [
-    "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
-    "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
-    "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
-    "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",]
+        "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
+        "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
+        "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
+        "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add"
+    ]
 
     upper_names = [
-    "Lumbar_flex_ext", "Lumbar_lateral_flex",
-    "Lcalvicule_x",
-    "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
-    "Lelbow_flex_ext", "Lelbow_pron_supi",
-    "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
-    "Rcalvicule_x",
-    "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
-    "Relbow_flex_ext", "Relbow_pron_supi",]
-    
-    fig, axes = plt.subplots(4, 3, figsize=(18, 12))
-    axes = axes.flatten()
+        "Lumbar_flex_ext", "Lumbar_lateral_flex",
+        "Lcalvicule_x",
+        "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
+        "Lelbow_flex_ext", "Lelbow_pron_supi",
+        "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
+        "Rcalvicule_x",
+        "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
+        "Relbow_flex_ext", "Relbow_pron_supi"
+    ]
 
-    for idx, i in enumerate(range(12)):
-        ax = axes[idx]
-        ax.plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")   
-        ax.plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
-        ax.set_title(lower_names[idx], fontsize=10)
-        ax.grid(True)
+    # --- FIGURE 1 : Lower body (Jambes) ---
+    # Colonne 0 : Right (6 DOFs) | Colonne 1 : Left (6 DOFs)
+    fig, axes = plt.subplots(6, 2, figsize=(15, 18))
+    lower_right_idx = [0, 1, 2, 3, 4, 5]
+    lower_left_idx = [6, 7, 8, 9, 10, 11]
 
-    axes[0].legend()
-    plt.suptitle(f"Lower body joints - {subject_name}", fontsize=16)
+    for row in range(6):
+        # Jambe droite
+        i = lower_right_idx[row]
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 0].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")   
+        axes[row, 0].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 0].set_title(f"{lower_names[i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 0].grid(True)
+
+        # Jambe gauche
+        i = lower_left_idx[row]
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")   
+        axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 1].set_title(f"{lower_names[i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 1].grid(True)
+
+    axes[0, 0].legend()
+    plt.suptitle("Lower body joints (Right vs Left)", fontsize=16)
     plt.tight_layout()
     plt.savefig(output_dir / f"{subject_name}_lower_body_joints.png", dpi=300)
     plt.close()
 
-    fig, axes = plt.subplots(5, 4, figsize=(20, 16))
-    axes = axes.flatten()
 
-    for idx, i in enumerate(range(12, 29)):
-        ax = axes[idx]
-        ax.plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
-        ax.plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
-        ax.set_title(upper_names[idx], fontsize=10)
-        ax.grid(True)
+    # --- FIGURE 2 : Upper body part 1 (Lumbar & Left side) ---
+    # Colonne 0 : Lumbar (2 DOFs + cases vides) | Colonne 1 : Left (6 DOFs)
+    fig, axes = plt.subplots(3, 3, figsize=(18, 10))
+    lumbar_idx = [12, 13]
+    left_col1_idx = [14, 15, 16] # Lcalvicule_x, Lshoulder_flex_ext, Lshoulder_abd_add
+    left_col2_idx = [17, 18, 19] # Lshoulder_int_ext_rot, Lelbow_flex_ext, Lelbow_pron_supi
 
-    for k in range(len(upper_names), len(axes)):
-        fig.delaxes(axes[k])
+    for row in range(3):
+        # Lumbar (seulement 2 DOFs, on cache la 3ème case)
+        if row < len(lumbar_idx):
+            i = lumbar_idx[row]
+            local_i = i - 12
+            rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+            axes[row, 0].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+            axes[row, 0].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+            axes[row, 0].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+            axes[row, 0].grid(True)
+            if row == 0: axes[row, 0].legend()
+        else:
+            axes[row, 0].axis('off') # Cache le sous-graphe vide
 
-    axes[0].legend()
-    plt.suptitle(f"Upper body joints - {subject_name}", fontsize=16)
+        # Left side - Première partie
+        i = left_col1_idx[row]
+        local_i = i - 12
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+        axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 1].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 1].grid(True)
+
+        # Left side - Deuxième partie
+        i = left_col2_idx[row]
+        local_i = i - 12
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 2].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+        axes[row, 2].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 2].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 2].grid(True)
+
+    plt.suptitle("Upper body joints - Lumbar & Left side", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_upper_body_joints.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_upper_body_lumbar_left.png", dpi=300)
     plt.close()
+
+
+    # --- FIGURE 3 : Upper body part 2 (Cervical & Right side) ---
+    # Colonne 0 : Cervical (3 DOFs) | Colonne 1 & 2 : Right diviso en 2 (3 DOFs chacun)
+    fig, axes = plt.subplots(3, 3, figsize=(18, 10))
+    cervical_idx = [20, 21, 22]
+    right_col1_idx = [23, 24, 25] # Rcalvicule_x, Rshoulder_flex_ext, Rshoulder_abd_add
+    right_col2_idx = [26, 27, 28] # Rshoulder_int_ext_rot, Relbow_flex_ext, Relbow_pron_supi
+
+    for row in range(3):
+        # Cervical
+        i = cervical_idx[row]
+        local_i = i - 12
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 0].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+        axes[row, 0].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 0].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 0].grid(True)
+        if row == 0: axes[row, 0].legend()
+
+        # Right side - Première partie
+        i = right_col1_idx[row]
+        local_i = i - 12
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+        axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 1].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 1].grid(True)
+
+        # Right side - Deuxième partie
+        i = right_col2_idx[row]
+        local_i = i - 12
+        rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
+        axes[row, 2].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
+        axes[row, 2].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
+        axes[row, 2].set_title(f"{upper_names[local_i]} (RMSE: {rmse:.4f})", fontsize=10)
+        axes[row, 2].grid(True)
+
+    plt.suptitle("Upper body joints - Cervical & Right side", fontsize=16)
+    plt.tight_layout()
+    plt.savefig(output_dir / f"{subject_name}_upper_body_cervical_right.png", dpi=300)
+    plt.close()
+    plt.show()
     
     print(f"\n[FINISH] Plots saved to {output_dir}")
 
@@ -309,22 +421,22 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "Jeremy"     
-    # TRIAL_NAME = "Trial111"           
-          
-    # MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
-    # SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
-    
-    # DATA_ROOT = "processed_data_feet"
-    # OUTPUT_DIR = "./results_full_step2motion_fm"
-
-    SUBJECT_NAME = "subject_11"     
-    TRIAL_NAME = "variant_008_dz+0.025_dx-0.025_dy+0.030"           
+    SUBJECT_NAME = "Jeremy"     
+    TRIAL_NAME = "Trial111"           
           
     MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
     SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
-    DATA_ROOT = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
+    
+    DATA_ROOT = "processed_data_feet"
     OUTPUT_DIR = "./results_full_step2motion_fm"
+
+    # SUBJECT_NAME = "subject_11"     
+    # TRIAL_NAME = "variant_008_dz+0.025_dx-0.025_dy+0.030"           
+          
+    # MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
+    # SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
+    # DATA_ROOT = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
+    # OUTPUT_DIR = "./results_full_step2motion_fm"
     
     
     # ===== RUN INFERENCE =====

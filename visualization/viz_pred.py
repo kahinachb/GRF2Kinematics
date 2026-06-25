@@ -17,10 +17,10 @@ import numpy as np
 import imageio.v2 as imageio
 
 
-subject = 'Kahina'
+subject = 'Jeremy'
 
-task = 'squat'
-which = 'HUMANOIDS'
+task = 'Trial111'
+which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
@@ -33,10 +33,10 @@ mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 
 
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}.urdf"# Human base
+urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_HUM/Kahina_squat_cfm_prediction.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_full_step2motion_fm/Jeremy_Trial111_prediction.csv"
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
 
@@ -44,21 +44,38 @@ path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/D
 # path_joint= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
 q_ref_df_pred = pd.read_csv(path_joint_pred)
 
-dofs = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
-        "middle_lumbar_Z", "middle_lumbar_X",
-    "left_clavicle_joint_X",
-    "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
-    "left_elbow_Z", "left_elbow_Y",
-    "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
-    "right_clavicle_joint_X",
-    "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
-    "right_elbow_Z", "right_elbow_Y",
+# dofs = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+#         "middle_lumbar_Z", "middle_lumbar_X",
+#     "left_clavicle_joint_X",
+#     "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
+#     "left_elbow_Z", "left_elbow_Y",
+#     "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
+#     "right_clavicle_joint_X",
+#     "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
+#     "right_elbow_Z", "right_elbow_Y",
 
-"left_hip_Z",  "left_hip_X",  "left_hip_Y",
-"left_knee_Z", "left_ankle_Z", "left_ankle_X",
-"right_hip_Z", "right_hip_X", "right_hip_Y",
-"right_knee_Z", "right_ankle_Z", "right_ankle_X",]
+# "left_hip_Z",  "left_hip_X",  "left_hip_Y",
+# "left_knee_Z", "left_ankle_Z", "left_ankle_X",
+# "right_hip_Z", "right_hip_X", "right_hip_Y",
+# "right_knee_Z", "right_ankle_Z", "right_ankle_X",]
 
+dofs = [
+    "FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
+    "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
+    "Lknee_flex_ext",
+    "Lankle_flex_ext","Lankle_abd_add",
+    "Lumbar_flex_ext","Lumbar_lateral_flex",
+    "Lcalvicule_x",
+    "Lshoulder_flex_ext","Lshoulder_abd_add","Lshoulder_int_ext_rot",
+    "Lelbow_flex_ext","Lelbow_pron_supi",
+    "Cervical_flex_ext","Cervical_lat_bend","Cervical_int_ext_rot",
+    "rcalvicule_x",
+    "Rshoulder_flex_ext","Rshoulder_abd_add","Rshoulder_int_ext_rot",
+    "Relbow_flex_ext","Relbow_pron_supi",
+    "Rhip_flex_ext","Rhip_abd_add","Rhip_int_ext_rot",
+    "Rknee_flex_ext",
+    "Rankle_flex_ext","Rankle_abd_add"
+]
 q_ref_df = pd.read_csv(path_joint, usecols=dofs).iloc[1:,:]
 
 print(q_ref_df_pred.shape)
@@ -68,14 +85,14 @@ desired_order_ref = [
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
     "Lknee_flex_ext",
     "Lankle_flex_ext","Lankle_abd_add",
-    # "Lumbar_flex_ext","Lumbar_lateral_flex",
-    # "Lcalvicule_x",
-    # "Lshoulder_flex_ext","Lshoulder_abd_add","Lshoulder_int_ext_rot",
-    # "Lelbow_flex_ext","Lelbow_pron_supi",
-    # "Cervical_flex_ext","Cervical_lat_bend","Cervical_int_ext_rot",
-    # "rcalvicule_x",
-    # "Rshoulder_flex_ext","Rshoulder_abd_add","Rshoulder_int_ext_rot",
-    # "Relbow_flex_ext","Relbow_pron_supi",
+    "Lumbar_flex_ext","Lumbar_lateral_flex",
+    "Lcalvicule_x",
+    "Lshoulder_flex_ext","Lshoulder_abd_add","Lshoulder_int_ext_rot",
+    "Lelbow_flex_ext","Lelbow_pron_supi",
+    "Cervical_flex_ext","Cervical_lat_bend","Cervical_int_ext_rot",
+    "rcalvicule_x",
+    "Rshoulder_flex_ext","Rshoulder_abd_add","Rshoulder_int_ext_rot",
+    "Relbow_flex_ext","Relbow_pron_supi",
     "Rhip_flex_ext","Rhip_abd_add","Rhip_int_ext_rot",
     "Rknee_flex_ext",
     "Rankle_flex_ext","Rankle_abd_add"
@@ -83,28 +100,37 @@ desired_order_ref = [
 
 
 
-desired_order_ref = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
+# desired_order_ref = ["root_joint","root_joint.1","root_joint.2","root_joint.3","root_joint.4","root_joint.5","root_joint.6",
                     
+#                     "left_hip_Z",  "left_hip_X",  "left_hip_Y",
+#                     "left_knee_Z", "left_ankle_Z", "left_ankle_X",
 
-"left_hip_Z",  "left_hip_X",  "left_hip_Y",
-"left_knee_Z", "left_ankle_Z", "left_ankle_X",
+#                         "middle_lumbar_Z", "middle_lumbar_X","left_clavicle_joint_X",
+#                         "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
+#                         "left_elbow_Z", "left_elbow_Y",
+#                         "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
+#                         "right_clavicle_joint_X",
+#                         "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
+#                         "right_elbow_Z", "right_elbow_Y",
 
-    "middle_lumbar_Z", "middle_lumbar_X","left_clavicle_joint_X",
-    "left_shoulder_Z", "left_shoulder_X", "left_shoulder_Y",
-    "left_elbow_Z", "left_elbow_Y",
-    "middle_cervical_Z", "middle_cervical_X", "middle_cervical_Y",
-    "right_clavicle_joint_X",
-    "right_shoulder_Z", "right_shoulder_X", "right_shoulder_Y",
-    "right_elbow_Z", "right_elbow_Y",
-
-"right_hip_Z", "right_hip_X", "right_hip_Y",
-"right_knee_Z", "right_ankle_Z", "right_ankle_X",
-]
+#                     "right_hip_Z", "right_hip_X", "right_hip_Y",
+#                     "right_knee_Z", "right_ankle_Z", "right_ankle_X",
+#                         ]
 
 desired_order_pred = [
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
     "Lknee_flex_ext",
     "Lankle_flex_ext","Lankle_abd_add",
+
+    "Lumbar_flex_ext","Lumbar_lateral_flex",
+    "Lcalvicule_x",
+    "Lshoulder_flex_ext","Lshoulder_abd_add","Lshoulder_int_ext_rot",
+    "Lelbow_flex_ext","Lelbow_pron_supi",
+    "Cervical_flex_ext","Cervical_lat_bend","Cervical_int_ext_rot",
+    "Rcalvicule_x",
+    "Rshoulder_flex_ext","Rshoulder_abd_add","Rshoulder_int_ext_rot",
+    "Relbow_flex_ext","Relbow_pron_supi",
+
     "Rhip_flex_ext","Rhip_abd_add","Rhip_int_ext_rot",
     "Rknee_flex_ext",
     "Rankle_flex_ext","Rankle_abd_add"
@@ -226,9 +252,10 @@ q_pred_full = np.zeros((n_samples, nq))
 for i in range(n_samples):
 
     q_pred_full[i, :7] = q_ref[i][:7]              # freeflyer
-    q_pred_full[i, 7:13] = q_ref_pred[i][:6]       # joints prédits
-    q_pred_full[i, 13:30] = q_ref[i][13:30]
-    q_pred_full[i, 30:] = q_ref_pred[i][6:]
+    # q_pred_full[i, 7:13] = q_ref_pred[i][:6]       # joints prédits
+    # q_pred_full[i, 13:30] = q_ref[i][13:30]
+    # q_pred_full[i, 30:] = q_ref_pred[i][6:]
+    q_pred_full[i,7:] = q_ref_pred[i][:]
 
 nv = model_h_pred.nv
 n_samples = len(q_pred_full)
@@ -254,9 +281,10 @@ for i in range(len(q_ref)):
 
     q_pred_full = np.zeros_like(q_ref[i])
     q_pred_full[:7] = q_ref[i][:7]      # freeflyer
-    q_pred_full[7:13] = q_ref_pred[i][:6]    # joints prédits
-    q_pred_full[13:30] = q_ref[i][13:30]
-    q_pred_full[30:] = q_ref_pred[i][6:]
+    # q_pred_full[7:13] = q_ref_pred[i][:6]    # joints prédits
+    # q_pred_full[13:30] = q_ref[i][13:30]
+    # q_pred_full[30:] = q_ref_pred[i][6:]
+    q_pred_full[7:] = q_ref_pred[i][:]
 
     tau_ref = pin.rnea(model_h,data_h,q_ref[i],v_ref[i],a_ref[i])
     pin.forwardKinematics(model_h, data_h, q_ref[i], v_ref[i], a_ref[i])

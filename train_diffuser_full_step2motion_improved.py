@@ -368,7 +368,7 @@ def run_experiment():
  
     # --------------------------- MODELE --------------------------------
     ddpm = DDPM(device, n_steps=1000)
-    model = DiffusionTransformer(num_layers=4).to(device)  # num_layers effectif après le fix de la classe
+    model = DiffusionTransformer(num_layers=4).to(device)  
     ema = EMA(model, decay=0.999)
  
     # lr plus raisonnable pour un Transformer + warmup + cosine
@@ -383,7 +383,7 @@ def run_experiment():
         ],
         milestones=[warmup_epochs],
     )
-    criterion = nn.SmoothL1Loss()  # robuste comme L1 mais lisse près de 0 ; mets nn.L1Loss() pour rester à l'identique
+    criterion = nn.SmoothL1Loss()  # robuste comme L1 mais lisse près de 0 ; mets nn.L1Loss()
  
     print(f"Nombre de paramètres : {count_parameters(model):,}")
     print(f"\n[START] Entraînement DDPM ({epochs} epochs)...")
