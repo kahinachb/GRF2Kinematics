@@ -130,10 +130,10 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     
-    f_raw = np.concatenate(
-        [f_raw[:,-9:], f_raw[:, :9]],
-        axis=1
-    )   
+    # f_raw = np.concatenate(
+    #     [f_raw[:,-9:], f_raw[:, :9]],
+    #     axis=1
+    # )   
     
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -216,11 +216,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics_glob.npy"
-    j_path = data_path / "all_joints.npy"
+    # f_path = data_path / "kinetics_glob.npy"
+    # j_path = data_path / "all_joints.npy"
     
-    # f_path = data_path / "kinetics_deltaf.npy"
-    # j_path = data_path / "all_joints_deltaf.npy"
+    f_path = data_path / "kinetics_deltaf.npy"
+    j_path = data_path / "all_joints_deltaf.npy"
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
@@ -421,22 +421,22 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "Jeremy"     
-    TRIAL_NAME = "Trial111"           
-          
-    MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
-    SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
-    
-    DATA_ROOT = "processed_data_feet"
-    OUTPUT_DIR = "./results_full_step2motion_fm"
-
-    # SUBJECT_NAME = "subject_11"     
-    # TRIAL_NAME = "variant_008_dz+0.025_dx-0.025_dy+0.030"           
+    # SUBJECT_NAME = "Jeremy"     
+    # TRIAL_NAME = "Trial111"           
           
     # MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
     # SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
-    # DATA_ROOT = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
+    
+    # DATA_ROOT = "processed_data_feet"
     # OUTPUT_DIR = "./results_full_step2motion_fm"
+
+    SUBJECT_NAME = "subject_11"     
+    TRIAL_NAME = "variant_008_dz+0.025_dx-0.025_dy+0.030"           
+          
+    MODEL_PATH = "./results_full_step2motion_fm/fm_biomech_model_best.pth"
+    SCALERS_PATH = "./results_full_step2motion_fm/scalers_concat.json"
+    DATA_ROOT = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
+    OUTPUT_DIR = "./results_full_step2motion_fm"
     
     
     # ===== RUN INFERENCE =====

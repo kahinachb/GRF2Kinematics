@@ -142,7 +142,7 @@ class DiffusionTransformer(nn.Module):
         # ==========================================
         # 1. BODY PARTITIONING (Cibles / Postures)
         # ==========================================
-        # Right Leg (6), Left Leg (6), Upper Body (17) -> Total 29
+        # Right Leg (6), Left Leg (6), Upper Body (17) -> 
         self.embed_Rleg = nn.Linear(6, embed_dim)
         self.embed_Lleg = nn.Linear(6, embed_dim)
         self.embed_Upper = nn.Linear(17, embed_dim)

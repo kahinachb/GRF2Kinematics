@@ -25,6 +25,8 @@ fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
 path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+path_grf ="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_data/subject_11_squat_variant_008_dz+0.025_dx-0.025_dy+0.030_grfm.csv"
+
 grf_df = pd.read_csv(path_grf)
 fx1, fy1, fz1 = 'Fx1_glob', 'Fy1_glob', 'Fz1_glob'
 mx1,my1,mz1 =  'Mx1_glob', 'My1_glob', 'Mz1_glob'
@@ -36,10 +38,10 @@ mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_full_step2motion_fm/Jeremy_Trial111_prediction.csv"
+path_joint_pred = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/results_full_step2motion_fm/subject_11_variant_008_dz+0.025_dx-0.025_dy+0.030_prediction.csv"
 path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
-
+path_joint = f"/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_data/subject_11_squat_variant_008_dz+0.025_dx-0.025_dy+0.030_q.csv"
 # path_joint_pred= '/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_PE_sin_cross_synth_guided11/s1_squat_variant_980_dz-0.080_dx+0.023_dy-0.017_prediction.csv'
 # path_joint= "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_human_like_motions_csv_new/generated_human_like_motions_csv/joint_filtered_squat_variant_980_dz-0.080_dx+0.023_dy-0.017.csv"
 q_ref_df_pred = pd.read_csv(path_joint_pred)
@@ -252,9 +254,6 @@ q_pred_full = np.zeros((n_samples, nq))
 for i in range(n_samples):
 
     q_pred_full[i, :7] = q_ref[i][:7]              # freeflyer
-    # q_pred_full[i, 7:13] = q_ref_pred[i][:6]       # joints prédits
-    # q_pred_full[i, 13:30] = q_ref[i][13:30]
-    # q_pred_full[i, 30:] = q_ref_pred[i][6:]
     q_pred_full[i,7:] = q_ref_pred[i][:]
 
 nv = model_h_pred.nv
@@ -276,17 +275,22 @@ m_ref_world = []
 f_pred_world = []
 m_pred_world = []
 
+tau_ref_all = []
+tau_pred_all = []
+
+F_world = []
+M_world = []
+
 for i in range(len(q_ref)):
 
 
     q_pred_full = np.zeros_like(q_ref[i])
     q_pred_full[:7] = q_ref[i][:7]      # freeflyer
-    # q_pred_full[7:13] = q_ref_pred[i][:6]    # joints prédits
-    # q_pred_full[13:30] = q_ref[i][13:30]
-    # q_pred_full[30:] = q_ref_pred[i][6:]
     q_pred_full[7:] = q_ref_pred[i][:]
 
-    tau_ref = pin.rnea(model_h,data_h,q_ref[i],v_ref[i],a_ref[i])
+    tau_ref = pin.rnea(model_h,data_h,q_ref[i],v_ref[i],a_ref[i]) #N et N.m 
+    tau_ref_all.append(tau_ref)
+
     pin.forwardKinematics(model_h, data_h, q_ref[i], v_ref[i], a_ref[i])
     wrench_base = data_h.f[1]
     oM1 = data_h.oMi[1]
@@ -296,10 +300,12 @@ for i in range(len(q_ref)):
     m_ref_world.append(f_world.angular)
 
     tau_pred = pin.rnea(model_h_pred,data_h_pred, q_pred_full,v_pred[i],a_pred[i])
+    tau_pred_all.append(tau_pred)
+
     pin.forwardKinematics(model_h_pred, data_h_pred, q_pred_full, v_pred[i], a_pred[i])
     wrench_base_pred = data_h_pred.f[1]
     oM1_pred = data_h_pred.oMi[1]
-    f_world_pred = oM1_pred.act(wrench_base)
+    f_world_pred = oM1_pred.act(wrench_base_pred)
 
     f_pred_world.append(f_world_pred.linear)
     m_pred_world.append(f_world_pred.angular)
@@ -307,17 +313,90 @@ for i in range(len(q_ref)):
 
     F1 = grf_df.loc[i, [fx1,fy1,fz1]].values
     F2 = grf_df.loc[i, [fx2,fy2,fz2]].values
-    M1 = grf_df.loc[i, [mx1,my1,mz1]].values / 1000.0
-    M2 = grf_df.loc[i, [mx2,my2,mz2]].values / 1000.0
+    M1 = grf_df.loc[i, [mx1,my1,mz1]].values 
+    M2 = grf_df.loc[i, [mx2,my2,mz2]].values 
     F = F1 + F2
     M = M1 + M2
 
-  
-    viz_human.display(q_ref[i])
-    viz_human_pred.display(q_pred_full)
-#     images.append(viewer.get_image())
+    F_world.append(F)
+    M_world.append(M)
 
     
+
+  
+    # viz_human.display(q_ref[i])
+    # viz_human_pred.display(q_pred_full)
+#     images.append(viewer.get_image())
+
+
+f_ref_world = np.array(f_ref_world)
+f_pred_world = np.array(f_pred_world)
+m_ref_world = np.array(m_ref_world)
+
+
+
+F_world = np.array(F_world)
+M_world = np.array(M_world)
+
+import matplotlib.pyplot as plt
+t = np.arange(len(F_world))
+
+fig, axs = plt.subplots(2, 3, figsize=(15, 7))
+
+labels = ["Fx", "Fy", "Fz", "Mx", "My", "Mz"]
+
+data_ref = np.hstack([f_ref_world, m_ref_world])
+data_pred = np.hstack([f_pred_world, m_pred_world])
+data_FM = np.hstack([F_world, M_world])
+
+
+for j, ax in enumerate(axs.flatten()):
+
+    ax.plot(t, data_ref[:, j], label="Reference joint wrench")
+    ax.plot(t, data_pred[:, j], label="Predicted joint wrench")
+    ax.plot(t, data_FM[:, j], label="Force plate")
+
+    ax.set_title(labels[j])
+    ax.set_xlabel("Frame")
+    ax.grid(True)
+
+    if j == 0:
+        ax.set_ylabel("Force (N)")
+    elif j == 3:
+        ax.set_ylabel("Moment (N.m)")
+
+
+axs[0,0].legend()
+
+plt.tight_layout()
+plt.show()
+
+tau_ref_all = np.array(tau_ref_all)
+tau_pred_all = np.array(tau_pred_all)
+
+tau_ref_j = tau_ref_all[:, :]
+tau_pred_j = tau_pred_all[:, :]
+
+n_joints = tau_ref_j.shape[1]
+
+joint_names = model_h_pred.names[:]  
+
+for j in range(n_joints):
+
+    plt.figure(figsize=(10, 3))
+
+    plt.plot(t, tau_ref_j[:, j], label="Ref")
+    plt.plot(t, tau_pred_j[:, j], label="Pred")
+
+    plt.title(joint_names[j])  # +1 si base incluse selon ton modèle
+    plt.xlabel("Frame")
+    plt.ylabel("Torque (N·m)")
+    plt.grid(True)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
 # video_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/inference_results_CFM_real/out.mp4"
 # imageio.mimsave(video_path, images, fps=fps, codec='libx264')
 # print(f"[MeshCat] Video saved to: {video_path}")
