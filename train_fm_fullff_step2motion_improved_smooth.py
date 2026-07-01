@@ -402,8 +402,14 @@ def run_experiment():
             # --- WEIGHTED MSE (Train) ---
             raw_loss = (v_pred - v_target) ** 2
             weighted_loss = raw_loss * weights
-            loss = weighted_loss.mean()
+            mse_loss = weighted_loss.mean()
             # ----------------------------
+            #La Smoothing Loss
+            temporal_diff = v_pred[:, 1:, :] - v_pred[:, :-1, :] 
+            smooth_loss = (temporal_diff ** 2).mean()
+
+            alpha_smooth = 0.1 
+            loss = mse_loss + alpha_smooth * smooth_loss
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -434,8 +440,13 @@ def run_experiment():
                 # --- WEIGHTED MSE (Validation) ---
                 raw_loss = (v_pred - v_target) ** 2
                 weighted_loss = raw_loss * weights
-                val_batch_loss = weighted_loss.mean()
+                val_loss = weighted_loss.mean()
                 # ---------------------------------
+
+                temporal_diff = v_pred[:, 1:, :] - v_pred[:, :-1, :] 
+                smooth_val_loss = (temporal_diff ** 2).mean()
+
+                val_batch_loss = val_loss + alpha_smooth * smooth_val_loss
                 
                 vrun += val_batch_loss.item()
                 

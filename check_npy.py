@@ -6,10 +6,10 @@ from pathlib import Path
 # CONFIGURATION
 # =========================================================
 # Remplace ce chemin par ton fichier .npy
-base = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
-file_path_k = Path(f"{base}/subject_01/variant_000_dz+0.025_dx+0.050_dy+0.025/all_joints_deltaf.npy")
+base = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_feet"
+file_path_k = Path(f"{base}/Jeremy/Trial111/all_joints.npy")
 # Exemple :
-file_path_j = Path(f"{base}/subject_01/variant_000_dz+0.025_dx+0.050_dy+0.025/kinetics_deltaf.npy")
+file_path_j = Path(f"{base}/Jeremy/Trial111/kinetics_glob.npy")
 # =========================================================
 # LOAD FILE
 # =========================================================
