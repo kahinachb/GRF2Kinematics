@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source_path="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_pf_HUM"
+source_path="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all"
 target_path="ulm94jm@jean-zay3.idris.fr:/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine"
 
 # FIRST SYNC RIGHT AWAY

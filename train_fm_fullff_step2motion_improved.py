@@ -81,9 +81,9 @@ def plot_joints(ref, pred, start, end, filename, label="Joint"):
 
 
 # =====================================================================
-# 1. DATASET  — on GARDE les 35 colonnes (plus de slicing [:, 6:])
+# 1. DATASET  — on GARDE les 35 colonnes 
 # =====================================================================
-class BiomechDiffusionDataset(Dataset):
+class BiomechDataset(Dataset):
     def __init__(self, file_list, window_size=128, stats=None):
         self.samples = []
         for f_path, j_path in file_list:
@@ -315,7 +315,7 @@ def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/datasets/GRF2Kine/synth_npy_all")
-    results_dir = Path("results_full_step2motion_fm_ff")
+    results_dir = Path("results_full_step2motion_fm_ff_weighted")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
@@ -354,15 +354,15 @@ def run_experiment():
     train_pairs = get_pairs(train_subs)
     stats = compute_and_save_stats(train_pairs, results_dir / "scalers_concat.json")
 
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats),
+    train_loader = DataLoader(BiomechDataset(train_pairs, stats=stats),
                               batch_size=64, shuffle=True, num_workers=8, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats),
+    val_loader = DataLoader(BiomechDataset(get_pairs(val_subs), stats=stats),
                             batch_size=64, shuffle=False, num_workers=8, pin_memory=True)
 
     model = FlowTransformer(num_layers=4).to(device)
     ema = EMA(model, decay=0.999)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-2)
-    epochs = 500
+    epochs = 250
     warmup = 10
     scheduler = SequentialLR(
         optimizer,
@@ -468,7 +468,7 @@ def run_experiment():
     model.eval()
 
     # --- fenêtre ---
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
+    test_ds = BiomechDataset(get_pairs(test_subs), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds) - 1)]
     f_in = f_in.unsqueeze(0).to(device)
     curr_j = sample_heun(model, f_in, n_steps=20)

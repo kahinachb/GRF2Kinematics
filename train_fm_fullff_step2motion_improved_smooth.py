@@ -307,6 +307,89 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     final_pred = (full_pred.cpu() * stats['j_s']) + stats['j_m']
     return j_raw, final_pred.numpy()
 
+@torch.no_grad()
+def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20, cfg_weight=1.0):
+    model.eval()
+    f_raw = np.load(f_path).astype(np.float32)
+    f_raw = np.concatenate(
+        [f_raw[:,-9:], f_raw[:, :9]],
+        axis=1
+    ) 
+    j_raw = np.load(j_path).astype(np.float32)          # (T, 35), FF inclus
+    f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+
+    T = f_norm.shape[0]
+    full_pred = torch.zeros((T, N_TARGET), device=device)
+    overlap = window_size - stride
+    dt = 1.0 / n_steps
+
+    print(f"  [INF] Sampling Flow Matching complet ({T} frames, CFG weight: {cfg_weight})...")
+
+    for start in range(0, T - window_size + 1, stride):
+        end = start + window_size
+        f_win = f_norm[start:end].unsqueeze(0).to(device)
+        has_ctx = start > 0
+
+        # --- PREPARATION CFG ---
+        # On prépare un batch contenant [Condition_Vide, Condition_Reelle]
+        f_uncond = torch.zeros_like(f_win)
+        f_combined = torch.cat([f_uncond, f_win], dim=0)
+
+        x0 = torch.randn((1, window_size, N_TARGET), device=device)
+        x = x0.clone()
+
+        if has_ctx:
+            known_x1 = full_pred[start:start + overlap].unsqueeze(0)
+            x0_known = x0[:, :overlap, :]
+            interp = lambda tv: (1.0 - tv) * x0_known + tv * known_x1
+            x[:, :overlap, :] = interp(0.0)
+
+        for i in range(n_steps):
+            t0 = i / n_steps
+            t1 = (i + 1) / n_steps
+            if has_ctx:
+                x[:, :overlap, :] = interp(t0)
+                
+            t0v = torch.full((1,), t0, device=device)
+
+            # --- PRÉDICTEUR (Euler step) ---
+            if cfg_weight != 1.0:
+                x_combined = torch.cat([x, x], dim=0)
+                t0v_combined = torch.cat([t0v, t0v], dim=0)
+                v_pred = model(x_combined, t0v_combined, f_combined)
+                v_unc, v_cond = v_pred.chunk(2, dim=0)
+                # Application de la formule CFG
+                v1 = v_unc + cfg_weight * (v_cond - v_unc)
+            else:
+                v1 = model(x, t0v, f_win)
+
+            x_pred = x + v1 * dt
+            
+            if has_ctx:
+                x_pred[:, :overlap, :] = interp(t1)
+                
+            t1v = torch.full((1,), t1, device=device)
+
+            if cfg_weight != 1.0:
+                x_pred_combined = torch.cat([x_pred, x_pred], dim=0)
+                t1v_combined = torch.cat([t1v, t1v], dim=0)
+                v_pred2 = model(x_pred_combined, t1v_combined, f_combined)
+                v_unc2, v_cond2 = v_pred2.chunk(2, dim=0)
+                # Application de la formule CFG sur l'anticipation
+                v2 = v_unc2 + cfg_weight * (v_cond2 - v_unc2)
+            else:
+                v2 = model(x_pred, t1v, f_win)
+
+            x = x + 0.5 * (v1 + v2) * dt
+
+        if has_ctx:
+            x[:, :overlap, :] = known_x1
+
+        full_pred[start:end] = x.squeeze(0)
+
+    final_pred = (full_pred.cpu() * stats['j_s']) + stats['j_m']
+    return j_raw, final_pred.numpy()
+
 
 # =====================================================================
 # 5. RUN EXPERIMENT
@@ -314,8 +397,8 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/synth_npy_all")
-    results_dir = Path("results_full_step2motion_fm_ff")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all")
+    results_dir = Path("results_full_step2motion_fm_ff_smoothed_noised")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
@@ -330,9 +413,12 @@ def run_experiment():
     unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
     random.shuffle(unique_subjects)
 
-    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
-        n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
-        return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
+    # def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+    #     n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
+    #     return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
+
+    def split_list(lst):
+        return lst[:-2], lst[-2:-1], lst[-1:]
 
     train_subjects, val_subjects, test_subjects = split_list(unique_subjects)
     train_subs = [s for s in all_samples if s["subject"] in train_subjects]
@@ -362,7 +448,7 @@ def run_experiment():
     model = FlowTransformer(num_layers=4).to(device)
     ema = EMA(model, decay=0.999)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-2)
-    epochs = 500
+    epochs = 250
     warmup = 10
     scheduler = SequentialLR(
         optimizer,
@@ -379,6 +465,10 @@ def run_experiment():
 
     print(f"\n[START] Entraînement Flow Matching (Weighted MSE pour FF)...")
 
+    NOISE_STD = 0.05       
+    CFG_DROPOUT_PROB = 0.1 
+    LAMBDA_SMOOTH = 0.01
+
     train_losses, val_losses = [], []
     best_val_loss = float('inf')
 
@@ -390,6 +480,17 @@ def run_experiment():
             j = j.to(device, non_blocking=True)        # (B, W, 35)
             B = j.shape[0]
 
+            # --- 1. SIM-TO-REAL GAP : Ajout de bruit sur les GRFMs ---
+            f = f + torch.randn_like(f) * NOISE_STD
+
+            # --- 2. CFG : Condition Dropout ---
+            # generer un masque binaire pour mettre à zéro aléatoirement 10% du batch
+            if CFG_DROPOUT_PROB > 0.0:
+                mask = torch.rand((B, 1, 1), device=device) > CFG_DROPOUT_PROB
+                f_input = f * mask.float()
+            else:
+                f_input = f
+
             x_1 = j
             x_0 = torch.randn_like(x_1)
             t = torch.rand((B, 1, 1), device=device)
@@ -397,19 +498,26 @@ def run_experiment():
             v_target = x_1 - x_0
 
             optimizer.zero_grad()
-            v_pred = model(x_t, t.view(B), f)
+            v_pred = model(x_t, t.view(B), f_input)
             
             # --- WEIGHTED MSE (Train) ---
             raw_loss = (v_pred - v_target) ** 2
             weighted_loss = raw_loss * weights
-            mse_loss = weighted_loss.mean()
+            loss_fm = weighted_loss.mean()
+            
             # ----------------------------
             #La Smoothing Loss
-            temporal_diff = v_pred[:, 1:, :] - v_pred[:, :-1, :] 
-            smooth_loss = (temporal_diff ** 2).mean()
+            t_expand = t.expand_as(x_t)
+            x_1_hat = x_t + (1.0 - t_expand) * v_pred
 
-            alpha_smooth = 0.1 
-            loss = mse_loss + alpha_smooth * smooth_loss
+            # Vitesse et accélération sur x_1 (pénalité de jerk / saccades)
+            velocity = x_1_hat[:, 1:, :] - x_1_hat[:, :-1, :]
+            acceleration = velocity[:, 1:, :] - velocity[:, :-1, :]
+            
+            loss_smooth = (acceleration ** 2).mean()
+
+            # --- LOSS TOTALE ---
+            loss = loss_fm + LAMBDA_SMOOTH * loss_smooth
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -435,18 +543,19 @@ def run_experiment():
                 x_t = t * x_1 + (1.0 - t) * x_0
                 v_target = x_1 - x_0
 
+                # Pas de bruit, pas de dropout en validation
                 v_pred = model(x_t, t.view(B), f)
                 
-                # --- WEIGHTED MSE (Validation) ---
                 raw_loss = (v_pred - v_target) ** 2
-                weighted_loss = raw_loss * weights
-                val_loss = weighted_loss.mean()
-                # ---------------------------------
-
-                temporal_diff = v_pred[:, 1:, :] - v_pred[:, :-1, :] 
-                smooth_val_loss = (temporal_diff ** 2).mean()
-
-                val_batch_loss = val_loss + alpha_smooth * smooth_val_loss
+                loss_fm_val = (raw_loss * weights).mean()
+                
+                # Optionnel
+                # t_expand = t.expand_as(x_t)
+                # x_1_hat = x_t + (1.0 - t_expand) * v_pred
+                # velocity = x_1_hat[:, 1:, :] - x_1_hat[:, :-1, :]
+                # acc = velocity[:, 1:, :] - velocity[:, :-1, :]
+                # val_batch_loss = loss_fm_val + LAMBDA_SMOOTH * (acc ** 2).mean()
+                val_batch_loss = loss_fm_val
                 
                 vrun += val_batch_loss.item()
                 

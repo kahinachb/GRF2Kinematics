@@ -25,8 +25,8 @@ which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
-# path_grf ="DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_grfm.csv"
+# path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+path_grf ="DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_grfm.csv"
 
 grf_df = pd.read_csv(path_grf)
 fx1, fy1, fz1 = 'Fx1_glob', 'Fy1_glob', 'Fz1_glob'
@@ -39,12 +39,11 @@ mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"inference_results/Jeremy_Trial111_improved_prediction.csv"
-path_joint_pred = f"results_full_step2motion_fm_improved_ff/Jeremy_Trial111_prediction_absolute_euler.csv"
-path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
+# path_joint_pred = f"results_full_step2motion_fm_improved_ff/Jeremy_Trial111_prediction_absolute.csv"
+# path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
-# path_joint = f"DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
-# path_joint_pred= 'results_full_step2motion_fm_ff/subject_11_variant_082_dz+0.006_dx+0.032_dy+0.013_prediction_absolute.csv'
+path_joint = f"DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
+path_joint_pred= 'results_full_step2motion_fm_improved_ff/subject_11_variant_082_dz+0.006_dx+0.032_dy+0.013_prediction_absolute_euler.csv'
 
 q_ref_df_pred = pd.read_csv(path_joint_pred)
 
