@@ -257,7 +257,7 @@ def sample_heun(model, f_cond, n_steps=20):
 # 4. INFÉRENCE COMPLÈTE — inpainting Flow Matching
 # =====================================================================
 @torch.no_grad()
-def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
+def predict_full_trial_basic(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)          # (T, 35), FF inclus
