@@ -222,7 +222,7 @@ def predict_full_trial_euler(model, f_path, j_path, stats, device, window_size=1
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     
-    f_raw = np.concatenate([f_raw[:,-9:], f_raw[:, :9]], axis=1)   
+    # f_raw = np.concatenate([f_raw[:,-9:], f_raw[:, :9]], axis=1)   
     
     j_raw = np.load(j_path).astype(np.float32)
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -307,11 +307,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    f_path = data_path / "kinetics_glob.npy"
-    j_path = data_path / "all_joints.npy"
+    # f_path = data_path / "kinetics_glob.npy"
+    # j_path = data_path / "all_joints.npy"
     
-    # f_path = data_path / "kinetics_deltaf.npy"
-    # j_path = data_path / "all_joints_deltaf.npy"
+    f_path = data_path / "kinetics_deltaf.npy"
+    j_path = data_path / "all_joints_deltaf.npy"
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
@@ -358,8 +358,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print(f"  ✓ delta Prediction saved: {csv_path}")
 
     
-    path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
-    # path_joint = f"DATA/generated_data/{subject_name}_squat_{trial_name}_q.csv"
+    # path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
+    path_joint = f"DATA/generated_data/{subject_name}_squat_{trial_name}_q.csv"
     q_ref_df = pd.read_csv(path_joint)
     position_initiale = q_ref_df.iloc[0, 0:3].values
     quaternion_initial = q_ref_df.iloc[0, 3:7].values
@@ -618,22 +618,22 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    SUBJECT_NAME = "Vincent"     
-    TRIAL_NAME = "Trial112"           
+    # SUBJECT_NAME = "Jeremy"     
+    # TRIAL_NAME = "Trial111"           
           
-    MODEL_PATH = "./results_full_step2motion_fm_improved_ff/fm_biomech_model_best.pth"
-    SCALERS_PATH = "./results_full_step2motion_fm_improved_ff/scalers_concat.json"
+    # MODEL_PATH = "./results_full_step2motion_fm_ff_weighted/fm_biomech_model_best.pth"
+    # SCALERS_PATH = "./results_full_step2motion_fm_ff_weighted/scalers_concat.json"
     
-    DATA_ROOT = "processed_data_feet"
-    OUTPUT_DIR = "./results_full_step2motion_fm_improved_ff"
+    # DATA_ROOT = "processed_data_feet"
+    # OUTPUT_DIR = "./results_full_step2motion_fm_ff_weighted"
 
-    # SUBJECT_NAME = "subject_01"     
-    # TRIAL_NAME = "variant_343_dz-0.035_dx+0.008_dy+0.012"   
+    SUBJECT_NAME = "subject_01"     
+    TRIAL_NAME = "variant_087_dz-0.100_dx+0.025_dy-0.030"   
 
-    # MODEL_PATH = "./results_full_step2motion_fm_improved_ff/fm_biomech_model_best.pth"
-    # SCALERS_PATH = "./results_full_step2motion_fm_improved_ff/scalers_concat.json"
-    # DATA_ROOT = "DATA/synth_npy_all"
-    # OUTPUT_DIR = "./results_full_step2motion_fm_improved_ff"
+    MODEL_PATH = "./results_full_step2motion_fm_ff_weighted/fm_biomech_model_best.pth"
+    SCALERS_PATH = "./results_full_step2motion_fm_ff_weighted/scalers_concat.json"
+    DATA_ROOT = "DATA/synth_npy_all"
+    OUTPUT_DIR = "./results_full_step2motion_fm_ff_weighted"
     
     
     # ===== RUN INFERENCE =====

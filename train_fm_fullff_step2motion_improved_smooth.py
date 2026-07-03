@@ -397,8 +397,8 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all")
-    results_dir = Path("results_full_step2motion_fm_ff_smoothed_noised")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all_new")
+    results_dir = Path("res_fullff_noised_masked_smoothed100") #avant smoothed noiseed a recuperer dans jz
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
@@ -413,12 +413,12 @@ def run_experiment():
     unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
     random.shuffle(unique_subjects)
 
-    # def split_list(lst, train_ratio=0.7, val_ratio=0.15):
-    #     n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
-    #     return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
+    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+        n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
+        return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
 
-    def split_list(lst):
-        return lst[:-2], lst[-2:-1], lst[-1:]
+    # def split_list(lst):
+    #     return lst[:-2], lst[-2:-1], lst[-1:]
 
     train_subjects, val_subjects, test_subjects = split_list(unique_subjects)
     train_subs = [s for s in all_samples if s["subject"] in train_subjects]
@@ -433,7 +433,7 @@ def run_experiment():
     print(f"Test subjects  : {len(test_subjects)}")
     print(f"Test subjects   : {test_subjects}")
     print(f"{'='*30}")
-    
+    input()
     def get_pairs(samples):
         return [(s["kinetics"], s["joints"]) for s in samples if s["kinetics"].exists() and s["joints"].exists()]
 

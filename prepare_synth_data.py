@@ -168,9 +168,9 @@ def process_folder(input_folder, output_base):
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/generated_data"
+    IN_FOLDER = "DATA/generated_q_csv"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/synth_npy_all"
+    OUT_FOLDER = "DATA/synth_npy_all_new"
     
     process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER)
     print("\n--- Opération terminée ---")
