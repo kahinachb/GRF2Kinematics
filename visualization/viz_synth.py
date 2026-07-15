@@ -25,21 +25,31 @@ fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
-# urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
+# path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
+# cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+
+
+# urdf_path ="DATA/urdf/human_subject_06.urdf"
+# path_joint = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_q.csv"
+# cop_csv = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_grfm.csv"
+
+
+# urdf_path ="DATA/urdf_scaled/URDFS/subject_001_77.4kg.urdf"
+path_joint = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_q.csv"
+cop_csv = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_grfm.csv"
+
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',
          'right_foot_0','left_foot_0']
 
-
-path_joint = f"DATA/generated_data/subject_01_squat_variant_000_dz+0.025_dx+0.050_dy+0.025_q.csv"
-q_ref_df = pd.read_csv(path_joint)#.iloc[:,1:]
+q_ref_df = pd.read_csv(path_joint).iloc[1:,:]
 q_ref = q_ref_df.to_numpy(dtype=float)
 
-cop_csv = f"DATA/generated_data/subject_01_squat_variant_000_dz+0.025_dx+0.050_dy+0.025_grfm.csv"
 df_cop = pd.read_csv(cop_csv)#.iloc[:,1:]
 pelvis =False
-   
 
+path_vrai = "DATA/Vinc/Jeremy/Trial111/kinetics_glob_filtered.csv"
+df_vrai = pd.read_csv(path_vrai)
 Fx1 = df_cop[find_col(df_cop, "Fx1_glob")]
 Fy1 = df_cop[find_col(df_cop, "Fy1_glob")]
 Fz1 = df_cop[find_col(df_cop, "Fz1_glob")]
@@ -130,6 +140,9 @@ add_sphere(viewer, "world/COP_RNEA",  radius=0.015, color=0xFF0000)  # red
 add_sphere(viewer, "world/COP_platform_global", radius=0.015, color=0x00FF00)  # green
 
 
+add_sphere(viewer, "world/pelvis_sol", radius=0.020, color=0x00FFFF) 
+
+
 
 # Background/grid
 bg_top = (1,1,1)
@@ -167,7 +180,17 @@ data_plot = {
 
 cop_fp =[]
 cop_rnea_list=[]
+
+force_fp = []
+force_rnea =[]
+
+moment_fp=[]
+moment_rnea=[]
+
+force_vrai =[]
+moment_vrai=[]
 for i in range(len(q_ref)):
+    # viz_human.display(q_ref[i])
 
     q_current = q_ref[i, :]
     pos_bassin = q_current[0:3]
@@ -182,6 +205,11 @@ for i in range(len(q_ref)):
     quat_final = pin.Quaternion(R_final)
     T_bassin[:3, :3] = R_final
     T_bassin[:3, 3] = pos_bassin
+
+    pos_bassin_proj = pos_bassin.copy()
+    pos_bassin_proj[2] = 0.0
+    safe_place(viewer,"pelvis_sol", pos_bassin_proj)
+
     set_tf(viewer, "pelvis",T_bassin)
     
 ##################"rnea"
@@ -203,50 +231,55 @@ for i in range(len(q_ref)):
     cop_y =  Mx / Fz
     cop_z = 0.0
     cop_rnea = np.array([cop_x, cop_y, cop_z])
-   ######################################################efforts in pelvis frame
+
+
     F_world1 = np.array([Fx1[i], Fy1[i], Fz1[i]])
     F_world2 = np.array([Fx2[i], Fy2[i], Fz2[i]])
-
-    #F_local = R^T * F_world
-    F_p1 = R_pelvis_world @ F_world1
-    F_p2 = R_pelvis_world @ F_world2
 
     M_world1= np.array([Mx1[i], My1[i], Mz1[i]])
     M_world2= np.array([Mx2[i], My2[i], Mz2[i]])
 
-    # M_p = R^T * (M_w - pos_bassin ^ F_w)
-    M_p1 = R_pelvis_world @ (M_world1 - np.cross(pos_bassin, F_world1))
-    M_p2 = R_pelvis_world @ (M_world2 - np.cross(pos_bassin, F_world2))
+    F_1 = np.array([df_vrai[find_col(df_vrai, "Fx1_glob")][i], df_vrai[find_col(df_vrai, "Fy1_glob")][i], df_vrai[find_col(df_vrai, "Fz1_glob")][i]])
+    F_2 = np.array([df_vrai[find_col(df_vrai, "Fx2_glob")][i], df_vrai[find_col(df_vrai, "Fy2_glob")][i], df_vrai[find_col(df_vrai, "Fz2_glob")][i]])
+
+    M_1=  np.array([df_vrai[find_col(df_vrai, "Mx1_glob")][i], df_vrai[find_col(df_vrai, "My1_glob")][i], df_vrai[find_col(df_vrai, "Mz1_glob")][i]])
+    M_2= np.array([df_vrai[find_col(df_vrai, "Mx2_glob")][i], df_vrai[find_col(df_vrai, "My2_glob")][i], df_vrai[find_col(df_vrai, "Mz2_glob")][i]])
+
+    F_total_vrai = F_1 +F_2
+    M_total_vrai = M_1 + M_2
+    force_vrai.append(F_total_vrai)
+    moment_vrai.append(M_total_vrai)
 
     ###cop world 
-    # cop_x1 = -M_world1[1] / F_world1[2]
-    # cop_y1 = M_world1[0] / F_world1[2]
-    # cop_z1 = 0.0
-    # cop_x2 = -M_world2[1] / F_world2[2]
-    # cop_y2 =  M_world2[0] / F_world2[2]
-    # cop_z2 = 0.0
-    # cop_world1 = np.array([cop_x1, cop_y1, cop_z1])
-    # cop_world2 = np.array([cop_x2, cop_y2, cop_z2])
+    cop_x1 = -M_world1[1] / F_world1[2]
+    cop_y1 = M_world1[0] / F_world1[2]
+    cop_z1 = 0.0
+    cop_x2 = -M_world2[1] / F_world2[2]
+    cop_y2 =  M_world2[0] / F_world2[2]
+    cop_z2 = 0.0
+    cop_world1 = np.array([cop_x1, cop_y1, cop_z1])
+    cop_world2 = np.array([cop_x2, cop_y2, cop_z2])
     #from file 
-    cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
-    cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
+    # cop_world1 = np.array([copx1[i], copy1[i], copz1[i]])
+    # cop_world2 = np.array([copx2[i], copy2[i], copz2[i]])
 
-    ##cop local 
-    cop_p1 = R_pelvis_world @ (cop_world1 - pos_bassin)
-    cop_p2 = R_pelvis_world @ (cop_world2 - pos_bassin)
-    
 
-    # results.append({
-    # 'Fx1_p': F_p1[0], 'Fy1_p': F_p1[1], 'Fz1_p': F_p1[2],
-    # 'Mx1_p': M_p1[0], 'My1_p': M_p1[1], 'Mz1_p': M_p1[2],
-    # 'COPx1_p': cop_p1[0], 'COPy1_p': cop_p1[1], 'COPz1_p': cop_p1[2],
-    # 'Fx2_p': F_p2[0], 'Fy2_p': F_p2[1], 'Fz2_p': F_p2[2],
-    # 'Mx2_p': M_p2[0], 'My2_p': M_p2[1], 'Mz2_p': M_p2[2],
-    # 'COPx2_p': cop_p2[0], 'COPy2_p': cop_p2[1], 'COPz2_p': cop_p2[2]
-    # })
+    F_total = F_world1  + F_world2
+    Fz_total = F_world1[2]+ F_world2[2]
+    gravity = abs(model_h.gravity.linear[2]) 
+    print("Fz_total en kg",Fz_total/gravity)
+    print(f"urdf weight : {pin.computeTotalMass(model_h):.2f} kg")
+    # input()
+    force_fp.append(F_total)
+    force_rnea.append(F)
 
-    Fz_total = F_world1+ F_world2
-    cop_global = (F_world1 * cop_world1 + F_world2 * cop_world2) / Fz_total
+    M_total = M_world1+ M_world2
+    moment_fp.append(M_total)
+    moment_rnea.append(M)
+
+
+
+    cop_global = (F_world1[2] * cop_world1 + F_world2[2] * cop_world2) / Fz_total
 
     safe_place(viewer, "COP_right", cop_world1)
     draw_force_arrow(viewer, "force_right", cop_world1, F_world1,color=0x00ff00)
@@ -257,6 +290,7 @@ for i in range(len(q_ref)):
     safe_place(viewer, "COP_platform_global", cop_global)
     safe_place(viewer,"COP_RNEA", cop_rnea)
     cop_fp.append(cop_global)
+    
     cop_rnea_list.append(cop_rnea)
 
 
@@ -296,16 +330,6 @@ for i in range(len(q_ref)):
     data_plot['L']['M'].append(M_localL)
     data_plot['L']['COP'].append(cop_localL)
 
-    results_feet.append({
-        'Fx1_footR': F_localR[0], 'Fy1_footR': F_localR[1], 'Fz1_footR': F_localR[2],
-        'Mx1_footR': M_localR[0], 'My1_footR': M_localR[1], 'Mz1_footR': M_localR[2],
-        'COPx1_footR': cop_localR[0], 'COPy1_footR': cop_localR[1], 'COPz1_footR': cop_localR[2],
-        
-        'Fx2_footL': F_localL[0], 'Fy2_footL': F_localL[1], 'Fz2_footL': F_localL[2],
-        'Mx2_footL': M_localL[0], 'My2_footL': M_localL[1], 'Mz2_footL': M_localL[2],
-        'COPx2_footL': cop_localL[0], 'COPy2_footL': cop_localL[1], 'COPz2_footL': cop_localL[2]
-    })
-    
 
 
 
@@ -325,6 +349,46 @@ for i in range(3):
     axs[i].plot(cop_rnea_list[:, i], label="RNEA")
     axs[i].set_title(f"COP {labels[i]}")
     axs[i].legend()
+
+plt.tight_layout()
+plt.show()
+
+force_vrai = np.array(force_vrai)
+force_fp = np.array(force_fp)
+force_rnea = np.array(force_rnea)
+fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+for i in range(3):
+    axs[i].plot(force_fp[:, i], label="FP")
+    axs[i].plot(force_rnea[:, i], label="RNEA")
+    axs[i].plot(force_vrai[:, i], label="True", color="k")
+    axs[i].set_title(f"F {labels[i]}")
+    axs[i].legend()
+
+# Force vraie
+# for i in range(3):
+#     axs[i + 3].plot(force_vrai[:, i], label="True", color="k")
+#     axs[i + 3].set_title(f"Force {labels[i]} (True)")
+#     axs[i + 3].legend()
+
+plt.tight_layout()
+plt.show()
+
+moment_vrai = np.array(moment_vrai)
+moment_fp = np.array(moment_fp)
+moment_rnea = np.array(moment_rnea)
+fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+for i in range(3):
+    axs[i].plot(moment_fp[:, i], label="FP",linewidth=3)
+    axs[i].plot(moment_rnea[:, i], label="RNEA")
+    axs[i].plot(moment_vrai[:, i], label="True", color="k")
+    axs[i].set_title(f"M {labels[i]}")
+    axs[i].legend()
+
+# Force vraie
+# for i in range(3):
+#     axs[i + 3].plot(moment_vrai[:, i], label="True", color="k")
+#     axs[i + 3].set_title(f"Moment {labels[i]} (True)")
+#     axs[i + 3].legend()
 
 plt.tight_layout()
 plt.show()

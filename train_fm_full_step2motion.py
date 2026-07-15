@@ -8,6 +8,96 @@ from pathlib import Path
 import random
 import json
 
+def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+    n = len(lst)
+
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    train = lst[:n_train]
+    val = lst[n_train:n_train + n_val]
+    test = lst[n_train + n_val:]
+
+    return train, val, test
+
+
+def split_dataset(all_samples, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    Si plusieurs sujets -> split par sujet.
+    Si un seul sujet -> split par essai (task).
+
+    Parameters
+    ----------
+    all_samples : list of dict
+        Chaque élément contient au minimum :
+        {
+            "subject": ...,
+            "task": ...,
+            ...
+        }
+
+    Returns
+    -------
+    train_samples, val_samples, test_samples
+    """
+
+    unique_subjects = sorted(set(s["subject"] for s in all_samples))
+
+    random.seed(seed)
+
+    # ------------------------------------------------------------------
+    # Cas 1 : plusieurs sujets -> split par sujet
+    # ------------------------------------------------------------------
+    if len(unique_subjects) > 1:
+
+        random.shuffle(unique_subjects)
+
+        train_subjects, val_subjects, test_subjects = split_list(
+            unique_subjects,
+            train_ratio,
+            val_ratio,
+        )
+
+        train_samples = [s for s in all_samples if s["subject"] in train_subjects]
+        val_samples = [s for s in all_samples if s["subject"] in val_subjects]
+        test_samples = [s for s in all_samples if s["subject"] in test_subjects]
+
+        print("\n[SPLIT PAR SUJET]")
+        print(f"Train subjects ({len(train_subjects)}): {train_subjects}")
+        print(f"Val subjects   ({len(val_subjects)}): {val_subjects}")
+        print(f"Test subjects  ({len(test_subjects)}): {test_subjects}")
+
+    # ------------------------------------------------------------------
+    # Cas 2 : un seul sujet -> split par essai (task)
+    # ------------------------------------------------------------------
+    else:
+
+        unique_tasks = sorted(set(s["task"] for s in all_samples))
+        random.shuffle(unique_tasks)
+
+        train_tasks, val_tasks, test_tasks = split_list(
+            unique_tasks,
+            train_ratio,
+            val_ratio,
+        )
+
+        train_samples = [s for s in all_samples if s["task"] in train_tasks]
+        val_samples = [s for s in all_samples if s["task"] in val_tasks]
+        test_samples = [s for s in all_samples if s["task"] in test_tasks]
+
+        print("\n[SPLIT PAR ESSAI]")
+        print(f"Train trials ({len(train_tasks)}): {train_tasks}")
+        print(f"Val trials   ({len(val_tasks)}): {val_tasks}")
+        print(f"Test trials  ({len(test_tasks)}): {test_tasks}")
+
+    print("=" * 40)
+    print(f"Train samples : {len(train_samples)}")
+    print(f"Val samples   : {len(val_samples)}")
+    print(f"Test samples  : {len(test_samples)}")
+    print("=" * 40)
+
+    return train_samples, val_samples, test_samples
+
 def sample_euler(model, f_cond, n_steps=20):
     """
     Solveur Euler basique pour générer une fenêtre depuis le bruit.
@@ -308,9 +398,9 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/synth_npy_all")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
 
-    results_dir = Path("results_full_step2motion_fm")
+    results_dir = Path("results_full_102")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -349,40 +439,19 @@ def run_experiment():
     random.shuffle(unique_subjects)
 
 
-    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
-
-        n = len(lst)
-
-        n_train = int(n * train_ratio)
-        n_val = int(n * val_ratio)
-
-        train = lst[:n_train]
-        val = lst[n_train:n_train + n_val]
-        test = lst[n_train + n_val:]
-
-        return train, val, test
-
-
-    train_subjects, val_subjects, test_subjects = split_list(
-        unique_subjects,
-        train_ratio=0.7,
-        val_ratio=0.15
-    )
+    train_subjects, val_subjects, test_subjects = split_dataset(
+    all_samples,
+    train_ratio=0.7,
+    val_ratio=0.15,
+    seed=42,
+)
 
 
     train_subs = [s for s in all_samples if s["subject"] in train_subjects]
     val_subs = [s for s in all_samples if s["subject"] in val_subjects]
     test_subs = [s for s in all_samples if s["subject"] in test_subjects]
 
-    print(f"\n[SPLIT SUMMARY]")
-    print(f"Train subjects : {len(train_subjects)}")
-    print(f"Train subjects   : {train_subjects}")
-    print(f"Val subjects   : {len(val_subjects)}")
-    print(f"Val subjects   : {val_subjects}")
-    print(f"Test subjects  : {len(test_subjects)}")
-    print(f"Test subjects   : {test_subjects}")
-    print(f"{'='*30}")
-
+    
     def get_pairs(samples):
 
         pairs = []
@@ -398,12 +467,13 @@ def run_experiment():
         return pairs
 
 
-    train_pairs = get_pairs(train_subs)
-    # print("train_pairs", train_pairs)
+    train_pairs = get_pairs(train_subjects)
+    print("train_pairs", train_pairs)
+    input()
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subs), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subjects), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
     model = DiffusionTransformer().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2) 
@@ -411,7 +481,7 @@ def run_experiment():
     print(f"Nombre de paramètres : {count_parameters(model):,}")
     train_losses, val_losses = [], []
 
-    epochs = 500
+    epochs = 250
     print(f"\n[START] Entraînement fm...")
     best_val_loss = float('inf')
     for epoch in range(epochs):
@@ -504,7 +574,7 @@ def run_experiment():
     print("[INF] Génération d'un exemple de test...")
     print("\n[INFO] Chargement du meilleur modèle pour l'inférence...")
     model.load_state_dict(torch.load(results_dir / "fm_biomech_model_best.pth"))
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subs), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_subjects), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -543,7 +613,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_subs)
+    test_pairs = get_pairs(test_subjects)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, n_steps=20)

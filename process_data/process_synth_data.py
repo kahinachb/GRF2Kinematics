@@ -19,12 +19,11 @@ from utils.utils import find_col
 from utils.viz_utils import add_sphere, place, set_tf, safe_place
 
 # --- CONFIGURATION ---
-subject = 'Jeremy'
-which = 'Vinc'
+
 fps = 100
 dt = 1.0 / fps
-input_dir = "DATA/generated_human_like_motions_csv/generated_human_like_motions_csv/"
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
+input_dir = "DATA/generated_q_csv"
+
 urdf_meshes_path = "motif/model/human_urdf"
 
 needed_markers = [
@@ -33,8 +32,7 @@ needed_markers = [
 ]
 
 # --- CHARGEMENT DU MODÈLE ---
-model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
-data_h = model_h.createData()
+
 
 # --- INITIALISATION MESHCAT ---
 import meshcat.geometry as g
@@ -68,14 +66,30 @@ def draw_force_arrow(viewer, name, cop, force, color=0xff0000, scale=0.001):
 # add_sphere(viewer, "world/COP_left",  radius=0.015, color=0x0000FF) # Bleu
 # add_sphere(viewer, "world/COP_platform_global", radius=0.018, color=0x00FF00) # Vert
 # add_sphere(viewer, "world/COP_RNEA",  radius=0.018, color=0xFF0000) # Rouge
+import re
 
 # --- BOUCLE SUR LES TRIALS ---
-joint_files = glob.glob(os.path.join(input_dir, "joint_filtered_*.csv"))
-
+joint_files = glob.glob(os.path.join(input_dir, "*_q.csv"))
+pattern = re.compile(
+    r"^(subject_\d+)_(.+)_q\.csv$"
+)
 for path_joint in joint_files:
-    trial_id = os.path.basename(path_joint).replace("joint_filtered_", "")
-    path_kinetics = os.path.join(input_dir, f"kinetics_glob_filtered_{trial_id}")
+    filename = os.path.basename(path_joint)
+
+    match = pattern.match(filename)
+    if not match:
+        continue
+
+    subject = match.group(1)
+    trial_id = match.group(2)
+
+    print(subject)
+    print(trial_id)
+
+    path_kinetics = os.path.join(input_dir, f"{subject}_{trial_id}_grfm.csv")
     output_path = os.path.join(input_dir, f"feet_frame_{trial_id}")
+    print(path_kinetics)
+    print(output_path)
 
     if os.path.exists(output_path):
         print(f"Skipping: {trial_id} (déjà traité)")
@@ -89,6 +103,24 @@ for path_joint in joint_files:
     
     # Calcul v et a pour RNEA
     n_samples = len(q_ref)
+    urdf_dir = "DATA/urdf_scaled/URDFS"
+
+    pattern = re.compile(rf"^({subject})_(\d+(?:\.\d+)?)kg\.urdf$")
+    urdf_path = None
+
+    for f in os.listdir(urdf_dir):
+        if pattern.match(f):
+            urdf_path = os.path.join(urdf_dir, f)
+            break
+
+    if urdf_path is None:
+        raise FileNotFoundError(f"Aucun URDF pour {subject}")
+
+    print(urdf_path)
+    input()
+
+    model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
+    data_h = model_h.createData()
     nv = model_h.nv
     v_ref = np.zeros((n_samples, nv))
     a_ref = np.zeros((n_samples, nv))
@@ -125,12 +157,12 @@ for path_joint in joint_files:
         cop_rnea = np.array([-M_rnea[1]/F_rnea[2], M_rnea[0]/F_rnea[2], 0.0])
 
         # 3. Extraction et calcul COP Global Plateformes
-        F_w1 = np.array([df_cop["Fx1"][i], df_cop["Fy1"][i], df_cop["Fz1"][i]])
-        F_w2 = np.array([df_cop["Fx2"][i], df_cop["Fy2"][i], df_cop["Fz2"][i]])
-        M_w1 = np.array([df_cop["Mx1"][i], df_cop["My1"][i], df_cop["Mz1"][i]])
-        M_w2 = np.array([df_cop["Mx2"][i], df_cop["My2"][i], df_cop["Mz2"][i]])
-        cop_w1 = np.array([df_cop["COPx1"][i], df_cop["COPy1"][i], df_cop["COPz1"][i]])
-        cop_w2 = np.array([df_cop["COPx2"][i], df_cop["COPy2"][i], df_cop["COPz2"][i]])
+        F_w1 = np.array([df_cop["Fx1_glob"][i], df_cop["Fy1_glob"][i], df_cop["Fz1_glob"][i]])
+        F_w2 = np.array([df_cop["Fx2_glob"][i], df_cop["Fy2_glob"][i], df_cop["Fz2_glob"][i]])
+        M_w1 = np.array([df_cop["Mx1_glob"][i], df_cop["My1_glob"][i], df_cop["Mz1_glob"][i]])
+        M_w2 = np.array([df_cop["Mx2_glob"][i], df_cop["My2_glob"][i], df_cop["Mz2_glob"][i]])
+        cop_w1 = np.array([df_cop["COPx1_glob"][i], df_cop["COPy1_glob"][i], df_cop["COPz1_glob"][i]])
+        cop_w2 = np.array([df_cop["COPx2_glob"][i], df_cop["COPy2_glob"][i], df_cop["COPz2_glob"][i]])
         
         Fz_total = F_w1[2] + F_w2[2]
         if Fz_total > 10: # Évite division par zéro si sujet en l'air

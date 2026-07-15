@@ -22,6 +22,96 @@ N_FF = 6
 N_TARGET = 35
 
 
+def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+    n = len(lst)
+
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    train = lst[:n_train]
+    val = lst[n_train:n_train + n_val]
+    test = lst[n_train + n_val:]
+
+    return train, val, test
+
+
+def split_dataset(all_samples, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    Si plusieurs sujets -> split par sujet.
+    Si un seul sujet -> split par essai (task).
+
+    Parameters
+    ----------
+    all_samples : list of dict
+        Chaque élément contient au minimum :
+        {
+            "subject": ...,
+            "task": ...,
+            ...
+        }
+
+    Returns
+    -------
+    train_samples, val_samples, test_samples
+    """
+
+    unique_subjects = sorted(set(s["subject"] for s in all_samples))
+
+    random.seed(seed)
+
+    # ------------------------------------------------------------------
+    # Cas 1 : plusieurs sujets -> split par sujet
+    # ------------------------------------------------------------------
+    if len(unique_subjects) > 1:
+
+        random.shuffle(unique_subjects)
+
+        train_subjects, val_subjects, test_subjects = split_list(
+            unique_subjects,
+            train_ratio,
+            val_ratio,
+        )
+
+        train_samples = [s for s in all_samples if s["subject"] in train_subjects]
+        val_samples = [s for s in all_samples if s["subject"] in val_subjects]
+        test_samples = [s for s in all_samples if s["subject"] in test_subjects]
+
+        print("\n[SPLIT PAR SUJET]")
+        print(f"Train subjects ({len(train_subjects)}): {train_subjects}")
+        print(f"Val subjects   ({len(val_subjects)}): {val_subjects}")
+        print(f"Test subjects  ({len(test_subjects)}): {test_subjects}")
+
+    # ------------------------------------------------------------------
+    # Cas 2 : un seul sujet -> split par essai (task)
+    # ------------------------------------------------------------------
+    else:
+
+        unique_tasks = sorted(set(s["task"] for s in all_samples))
+        random.shuffle(unique_tasks)
+
+        train_tasks, val_tasks, test_tasks = split_list(
+            unique_tasks,
+            train_ratio,
+            val_ratio,
+        )
+
+        train_samples = [s for s in all_samples if s["task"] in train_tasks]
+        val_samples = [s for s in all_samples if s["task"] in val_tasks]
+        test_samples = [s for s in all_samples if s["task"] in test_tasks]
+
+        print("\n[SPLIT PAR ESSAI]")
+        print(f"Train trials ({len(train_tasks)}): {train_tasks}")
+        print(f"Val trials   ({len(val_tasks)}): {val_tasks}")
+        print(f"Test trials  ({len(test_tasks)}): {test_tasks}")
+
+    print("=" * 40)
+    print(f"Train samples : {len(train_samples)}")
+    print(f"Val samples   : {len(val_samples)}")
+    print(f"Test samples  : {len(test_samples)}")
+    print("=" * 40)
+
+    return train_samples, val_samples, test_samples
+
 # =====================================================================
 # Reproductibilité
 # =====================================================================
@@ -314,49 +404,72 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all_new")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
     results_dir = Path("res_fullff_weighted100")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
-    for subject_dir in sorted([d for d in data_root.iterdir() if d.is_dir()]):
-        for task_dir in [d for d in subject_dir.iterdir() if d.is_dir()]:
-            kin = task_dir / "kinetics_deltaf.npy"
-            jts = task_dir / "all_joints_deltaf.npy"
-            if kin.exists() and jts.exists():
-                all_samples.append({"subject": subject_dir.name.lower(), "kinetics": kin, "joints": jts})
 
-    print(f"Nombre total de samples : {len(all_samples)}")
+    subjects = sorted([d for d in data_root.iterdir() if d.is_dir()])
+
+    for subject_dir in subjects:
+
+        subject_name = subject_dir.name.lower()
+
+        task_dirs = [d for d in subject_dir.iterdir() if d.is_dir()]
+
+        for task_dir in task_dirs:
+
+            task_name = task_dir.name.lower()
+
+
+            kinetics_file = task_dir / "kinetics_deltaf.npy"
+            joints_file = task_dir / "all_joints_deltaf.npy"
+
+            if kinetics_file.exists() and joints_file.exists():
+
+                all_samples.append({
+                    "subject": subject_name,
+                    "task": task_name,
+                    "kinetics": kinetics_file,
+                    "joints": joints_file
+                })
+
+
+    print(f"Nombre total de samples squat : {len(all_samples)}")
+    
     unique_subjects = sorted(list(set(s["subject"] for s in all_samples)))
+
+    random.seed(42)
     random.shuffle(unique_subjects)
 
-    def split_list(lst, train_ratio=0.7, val_ratio=0.15):
-        n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
-        return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
+    train_subjects, val_subjects, test_subjects = split_dataset(
+    all_samples,
+    train_ratio=0.7,
+    val_ratio=0.15,
+    seed=42,
+)
+    # def split_list(lst, train_ratio=0.7, val_ratio=0.15):
+    #     n = len(lst); n_tr, n_va = int(n * train_ratio), int(n * val_ratio)
+    #     return lst[:n_tr], lst[n_tr:n_tr + n_va], lst[n_tr + n_va:]
 
-    train_subjects, val_subjects, test_subjects = split_list(unique_subjects)
+    # train_subjects, val_subjects, test_subjects = split_list(unique_subjects)
     train_subs = [s for s in all_samples if s["subject"] in train_subjects]
     val_subs = [s for s in all_samples if s["subject"] in val_subjects]
     test_subs = [s for s in all_samples if s["subject"] in test_subjects]
     
-    print(f"\n[SPLIT SUMMARY]")
-    print(f"Train subjects : {len(train_subjects)}")
-    print(f"Train subjects   : {train_subjects}")
-    print(f"Val subjects   : {len(val_subjects)}")
-    print(f"Val subjects   : {val_subjects}")
-    print(f"Test subjects  : {len(test_subjects)}")
-    print(f"Test subjects   : {test_subjects}")
-    print(f"{'='*30}")
     
     def get_pairs(samples):
         return [(s["kinetics"], s["joints"]) for s in samples if s["kinetics"].exists() and s["joints"].exists()]
 
-    train_pairs = get_pairs(train_subs)
+    train_pairs = get_pairs(train_subjects)
+    # print(train_pairs)
+    # input()
     stats = compute_and_save_stats(train_pairs, results_dir / "scalers_concat.json")
 
     train_loader = DataLoader(BiomechDataset(train_pairs, stats=stats),
                               batch_size=64, shuffle=True, num_workers=8, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(BiomechDataset(get_pairs(val_subs), stats=stats),
+    val_loader = DataLoader(BiomechDataset(get_pairs(val_subjects), stats=stats),
                             batch_size=64, shuffle=False, num_workers=8, pin_memory=True)
 
     model = FlowTransformer(num_layers=4).to(device)
@@ -468,7 +581,7 @@ def run_experiment():
     model.eval()
 
     # --- fenêtre ---
-    test_ds = BiomechDataset(get_pairs(test_subs), stats=stats)
+    test_ds = BiomechDataset(get_pairs(test_subjects), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds) - 1)]
     f_in = f_in.unsqueeze(0).to(device)
     curr_j = sample_heun(model, f_in, n_steps=20)
@@ -482,7 +595,7 @@ def run_experiment():
 
     # --- essai complet ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    random_trial = random.choice(get_pairs(test_subs))
+    random_trial = random.choice(get_pairs(test_subjects))
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, n_steps=20)
     plot_joints(ref_full, pred_full, 0, 6,   results_dir / "fig_freeflyer.png", label="FreeFlyer")

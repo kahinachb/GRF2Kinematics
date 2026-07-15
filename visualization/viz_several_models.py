@@ -39,10 +39,11 @@ q_df = pd.read_csv(path_joint)
 q1 = q_df.to_numpy(dtype=float)
 
 
-urdf_2 = "DATA/urdf/human_subject_08.urdf"
-urdf_2 =f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"
-path_grf2 = "DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_grfm.csv"
-path_joint2 = "DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
+urdf_2 =f"DATA/urdf_scaled/URDFS/subject_001_77.4kg.urdf"
+path_joint2 = f"DATA/generated_q_csv/subject_001_squat_variant_004_dz+0.005_dx-0.050_dy+0.004_q.csv"
+path_grf2 = f"DATA/generated_q_csv/subject_001_squat_variant_004_dz+0.005_dx-0.050_dy+0.004_grfm.csv"
+
+
 
 grf_df2 = pd.read_csv(path_grf2)
 q_df2 = pd.read_csv(path_joint2)
@@ -70,7 +71,7 @@ viz_human2 = MeshcatVisualizer(model_h2, coll_h2, vis_h2)
 viz_human2.initViewer(viewer, open=True)
 viz_human2.loadViewerModel("h2", color=[0.0, 1.0, 0.0, 0.8])
 ###########################################################################
-q0 = pin.neutral(model_h)
+# q0 = pin.neutral(model_h)
 
 
 # Background/grid
@@ -102,25 +103,25 @@ M2_world = []
 size = min (len(q1),len(q2))
 for i in range(size):
 
-    Fg = grf_df.loc[i, [fx1,fy1,fz1]].values
-    Fd = grf_df.loc[i, [fx2,fy2,fz2]].values
-    Mg = grf_df.loc[i, [mx1,my1,mz1]].values 
-    Md = grf_df.loc[i, [mx2,my2,mz2]].values 
-    F1 = Fg + Fd
-    M1 = Mg + Md
+    # Fg = grf_df.loc[i, [fx1,fy1,fz1]].values
+    # Fd = grf_df.loc[i, [fx2,fy2,fz2]].values
+    # Mg = grf_df.loc[i, [mx1,my1,mz1]].values 
+    # Md = grf_df.loc[i, [mx2,my2,mz2]].values 
+    # F1 = Fg + Fd
+    # M1 = Mg + Md
 
-    F1_world.append(F1)
-    M1_world.append(M1)
+    # F1_world.append(F1)
+    # M1_world.append(M1)
 
-    Fg = grf_df2.loc[i, [fx1,fy1,fz1]].values
-    Fd = grf_df2.loc[i, [fx2,fy2,fz2]].values
-    Mg = grf_df2.loc[i, [mx1,my1,mz1]].values 
-    Md = grf_df2.loc[i, [mx2,my2,mz2]].values 
-    F2 = Fg + Fd
-    M2 = Mg + Md
+    # Fg = grf_df2.loc[i, [fx1,fy1,fz1]].values
+    # Fd = grf_df2.loc[i, [fx2,fy2,fz2]].values
+    # Mg = grf_df2.loc[i, [mx1,my1,mz1]].values 
+    # Md = grf_df2.loc[i, [mx2,my2,mz2]].values 
+    # F2 = Fg + Fd
+    # M2 = Mg + Md
 
-    F2_world.append(F2)
-    M2_world.append(M2)
+    # F2_world.append(F2)
+    # M2_world.append(M2)
 
     
 

@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation as R
 N_FF = 6
 N_TARGET = 35
 
+#inferecnce with classifier free guidance =1 puis = 4 (ça change rien sur jeremy)
 def integrate_ff_trajectory(deltas_array, init_pos, init_quat):
     """
     Fonction utilitaire pour intégrer une trajectoire locale en trajectoire absolue.
@@ -158,14 +159,17 @@ class FlowTransformer(nn.Module):
     #     [f_raw[:,-9:], f_raw[:, :9]],
     #     axis=1
     # ) 
+
 @torch.no_grad()
-def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
+def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20, cfg_weight=2.0):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     f_raw = np.concatenate(
         [f_raw[:,-9:], f_raw[:, :9]],
         axis=1
     ) 
+    from utils.linear_algebra_utils import lowpass_filter 
+
     j_raw = np.load(j_path).astype(np.float32)          # (T, 35), FF inclus
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
 
@@ -174,12 +178,17 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     overlap = window_size - stride
     dt = 1.0 / n_steps
 
-    print(f"  [INF] Sampling Flow Matching (Heun) complet ({T} frames, {n_steps} steps/win)...")
+    print(f"  [INF] Sampling Flow Matching complet ({T} frames, CFG weight: {cfg_weight})...")
 
     for start in range(0, T - window_size + 1, stride):
         end = start + window_size
         f_win = f_norm[start:end].unsqueeze(0).to(device)
         has_ctx = start > 0
+
+        # --- PREPARATION CFG ---
+        # On prépare un batch contenant [Condition_Vide, Condition_Reelle]
+        f_uncond = torch.zeros_like(f_win)
+        f_combined = torch.cat([f_uncond, f_win], dim=0)
 
         x0 = torch.randn((1, window_size, N_TARGET), device=device)
         x = x0.clone()
@@ -195,14 +204,37 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
             t1 = (i + 1) / n_steps
             if has_ctx:
                 x[:, :overlap, :] = interp(t0)
+                
             t0v = torch.full((1,), t0, device=device)
-            t1v = torch.full((1,), t1, device=device)
 
-            v1 = model(x, t0v, f_win)
+            # --- PRÉDICTEUR (Euler step) ---
+            if cfg_weight != 1.0:
+                x_combined = torch.cat([x, x], dim=0)
+                t0v_combined = torch.cat([t0v, t0v], dim=0)
+                v_pred = model(x_combined, t0v_combined, f_combined)
+                v_unc, v_cond = v_pred.chunk(2, dim=0)
+                # Application de la formule CFG
+                v1 = v_unc + cfg_weight * (v_cond - v_unc)
+            else:
+                v1 = model(x, t0v, f_win)
+
             x_pred = x + v1 * dt
+            
             if has_ctx:
                 x_pred[:, :overlap, :] = interp(t1)
-            v2 = model(x_pred, t1v, f_win)
+                
+            t1v = torch.full((1,), t1, device=device)
+
+            if cfg_weight != 1.0:
+                x_pred_combined = torch.cat([x_pred, x_pred], dim=0)
+                t1v_combined = torch.cat([t1v, t1v], dim=0)
+                v_pred2 = model(x_pred_combined, t1v_combined, f_combined)
+                v_unc2, v_cond2 = v_pred2.chunk(2, dim=0)
+                # Application de la formule CFG sur l'anticipation
+                v2 = v_unc2 + cfg_weight * (v_cond2 - v_unc2)
+            else:
+                v2 = model(x_pred, t1v, f_win)
+
             x = x + 0.5 * (v1 + v2) * dt
 
         if has_ctx:
@@ -213,65 +245,6 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     final_pred = (full_pred.cpu() * stats['j_s']) + stats['j_m']
     return j_raw, final_pred.numpy()
 
-@torch.no_grad()
-def predict_full_trial_euler(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
-    """
-    Inférence avec Inpainting Autorégressif et solveur Euler (Flow Matching)
-    Garantit une continuité temporelle parfaite.
-    """
-    model.eval()
-    f_raw = np.load(f_path).astype(np.float32)
-    
-    # f_raw = np.concatenate([f_raw[:,-9:], f_raw[:, :9]], axis=1)   
-    
-    j_raw = np.load(j_path).astype(np.float32)
-    f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
-    
-    T = f_norm.shape[0]
-    full_pred = torch.zeros((T, N_TARGET)).to(device)
-
-    print(f"  [INF] Sampling trial complet ({T} frames) avec {n_steps} steps (Flow Matching - Euler)...")
-    
-    overlap_size = window_size - stride
-    dt = 1.0 / n_steps
-    
-    for start in range(0, T - window_size + 1, stride):
-        end = start + window_size
-        f_win = f_norm[start:end].unsqueeze(0).to(device)
-        
-        has_context = (start > 0)
-        
-        # 1. On part d'un bruit pur
-        x_0 = torch.randn((1, window_size, N_TARGET)).to(device)
-        x_t = x_0.clone()
-        
-        if has_context:
-            known_x1 = full_pred[start : start + overlap_size].unsqueeze(0)
-            # Fonction d'interpolation (comme dans Heun)
-            interp = lambda tv: (1.0 - tv) * x_0[:, :overlap_size, :] + tv * known_x1
-            x_t[:, :overlap_size, :] = interp(0.0)
-        
-        # 2. Boucle d'intégration ODE (Euler)
-        for i in range(n_steps):
-            t_val = i / n_steps
-            # CORRECTION : t dans [0, 1], le scaling x1000 est géré dans le modèle !
-            t_tensor = torch.full((1,), t_val, device=device)
-            
-            if has_context:
-                x_t[:, :overlap_size, :] = interp(t_val)
-            
-            v_pred = model(x_t, t_tensor, f_win)
-            
-            x_t = x_t + v_pred * dt
-        
-        # 3. Verrouillage final de la zone de chevauchement à t=1
-        if has_context:
-            x_t[:, :overlap_size, :] = known_x1
-            
-        full_pred[start:end] = x_t.squeeze(0)
-
-    final_pred = (full_pred.cpu() * stats['j_s']) + stats['j_m']
-    return j_raw, final_pred.numpy()
 
 # ==========================================
 # 3. MAIN INFERENCE SCRIPT
@@ -307,11 +280,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print("\n[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
     
-    # f_path = data_path / "kinetics_glob.npy"
-    # j_path = data_path / "all_joints.npy"
+    f_path = data_path / "kinetics_glob.npy"
+    j_path = data_path / "all_joints.npy"
     
-    f_path = data_path / "kinetics_deltaf.npy"
-    j_path = data_path / "all_joints_deltaf.npy"
+    # f_path = data_path / "kinetics_deltaf.npy"
+    # j_path = data_path / "all_joints_deltaf.npy"
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
@@ -322,7 +295,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     # ===== 4. RUN INFERENCE =====
     print("\n[4/5] Running inference...")
-    j_ref, j_preds = predict_full_trial_euler(
+    j_ref, j_preds = predict_full_trial(
         model, f_path, j_path, stats, device,
         window_size=128, stride=64, n_steps=20
     )
@@ -358,8 +331,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     print(f"  ✓ delta Prediction saved: {csv_path}")
 
     
-    # path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
-    path_joint = f"DATA/generated_q_csv/{subject_name}_squat_{trial_name}_q.csv"
+    path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
+    # path_joint = f"DATA/generated_data/{subject_name}_squat_{trial_name}_q.csv"
     q_ref_df = pd.read_csv(path_joint)
     position_initiale = q_ref_df.iloc[0, 0:3].values
     quaternion_initial = q_ref_df.iloc[0, 3:7].values
@@ -413,7 +386,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     ] + joint_names[6:] 
 
     df_pred_abs = pd.DataFrame(arr_abs_final, columns=joint_names_abs)
-    csv_path_abs = output_dir / f"{subject_name}_{trial_name}_prediction_absolute_euler.csv"
+    csv_path_abs = output_dir / f"{subject_name}_{trial_name}_prediction_absolute.csv"
     df_pred_abs.to_csv(csv_path_abs, index=False)
     
     print(f"  ✓ Absolute Prediction saved: {csv_path_abs}")
@@ -473,7 +446,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
             
     plt.suptitle("Absolute Freeflyer Trajectory (True vs Ref Int vs Pred Int)", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_absolute_ff_euler.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_absolute_ff.png", dpi=300)
     plt.close()
 
     fig, axes = plt.subplots(6, 1, figsize=(15, 18))
@@ -488,7 +461,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     
     plt.suptitle("Freeflyer variation)", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_ff_euler.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_ff.png", dpi=300)
     plt.close()
 
     # --- FIGURE 1 : Lower body (Jambes) ---
@@ -518,7 +491,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     axes[0, 0].legend()
     plt.suptitle("Lower body joints (Right vs Left)", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_lower_body_joints_euler.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_lower_body_joints.png", dpi=300)
     plt.close()
 
 
@@ -563,7 +536,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     plt.suptitle("Upper body joints - Lumbar & Left side", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_upper_body_lumbar_left_euler.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_upper_body_lumbar_left.png", dpi=300)
     plt.close()
 
 
@@ -605,7 +578,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     plt.suptitle("Upper body joints - Cervical & Right side", fontsize=16)
     plt.tight_layout()
-    plt.savefig(output_dir / f"{subject_name}_upper_body_cervical_right_euler.png", dpi=300)
+    plt.savefig(output_dir / f"{subject_name}_upper_body_cervical_right.png", dpi=300)
     plt.close()
     plt.show()
     
@@ -618,22 +591,22 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "Christine"     
-    # TRIAL_NAME = "Trial110"           
+    SUBJECT_NAME = "Jeremy"     
+    TRIAL_NAME = "Trial111"           
           
-    # MODEL_PATH = "./res_fullff_weighted100/fm_biomech_model_best.pth"
-    # SCALERS_PATH = "./res_fullff_weighted100/scalers_concat.json"
+    MODEL_PATH = "./results_full_step2motion_fm_ff_smoothed_noised/fm_biomech_model_best.pth"
+    SCALERS_PATH = "./results_full_step2motion_fm_ff_smoothed_noised/scalers_concat.json"
     
-    # DATA_ROOT = "processed_data_feet"
-    # OUTPUT_DIR = "./res_fullff_weighted100"
+    DATA_ROOT = "processed_data_feet"
+    OUTPUT_DIR = "./results_full_step2motion_fm_ff_smoothed_noised"
 
-    SUBJECT_NAME = "subject_005"     
-    TRIAL_NAME = "variant_001_dz+0.020_dx+0.075_dy+0.008"   
+    # SUBJECT_NAME = "subject_11"     
+    # TRIAL_NAME = "variant_000_dz+0.025_dx+0.070_dy+0.020"   
 
-    MODEL_PATH = "./res_fullff_weighted100/fm_biomech_model_best.pth"
-    SCALERS_PATH = "./res_fullff_weighted100/scalers_concat.json"
-    DATA_ROOT = "DATA/synth_npy_all_new"
-    OUTPUT_DIR = "./res_fullff_weighted100"
+    # MODEL_PATH = "./results_full_step2motion_fm_ff_smoothed_noised/fm_biomech_model_best.pth"
+    # SCALERS_PATH = "./results_full_step2motion_fm_ff_smoothed_noised/scalers_concat.json"
+    # DATA_ROOT = "DATA/synth_npy_all"
+    # OUTPUT_DIR = "./results_full_step2motion_fm_ff_smoothed_noised"
     
     
     # ===== RUN INFERENCE =====

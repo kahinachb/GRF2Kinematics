@@ -1,141 +1,100 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
-# Charger le fichier
-df = pd.read_csv("DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_q.csv")
-df2= pd.read_csv("DATA/generated_data/subject_02_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_q.csv")
-
-df_grfm = pd.read_csv("DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_grfm.csv")
-df2_grfm= pd.read_csv("DATA/generated_data/subject_02_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_grfm.csv")
-
-# -------------------------
-# GROUPES
-# -------------------------
-group1 = ['FF_X','FF_Y','FF_Z','FF_quatx','FF_quaty','FF_quatz','FF_quatw']
-group2 = [
-    "Rhip_flex_ext", "Rhip_abd_add", "Rhip_int_ext_rot",
-    "Rknee_flex_ext", "Rankle_flex_ext", "Rankle_abd_add",
-    "Lhip_flex_ext", "Lhip_abd_add", "Lhip_int_ext_rot",
-    "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add",]
-group3 = [
-    "Lumbar_flex_ext", "Lumbar_lateral_flex",
-    "Lcalvicule_x",
-    "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
-    "Lelbow_flex_ext", "Lelbow_pron_supi",
-    "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
-    "rcalvicule_x",
-    "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
-    "Relbow_flex_ext", "Relbow_pron_supi",]
-
-# -------------------------
-# FONCTION PLOT
-def plot_group(dataframe, columns, title):
-    data = dataframe[columns]
-
-    n = len(columns)
-    cols = 3
-    rows = (n + cols - 1) // cols
-
-    fig, axes = plt.subplots(rows, cols, figsize=(15, 3 * rows))
-    axes = axes.flatten()
-
-    for i, col in enumerate(columns):
-        axes[i].plot(data[col])
-        axes[i].set_title(col)
-        axes[i].grid(True)
-
-    # cacher les axes inutiles
-    for j in range(i + 1, len(axes)):
-        axes[j].axis("off")
-
-    fig.suptitle(title)
-    plt.tight_layout()
-    
-
-plot_group(df, group1, "File 1 - Freeflyer")
-plot_group(df2, group1, "File 2 - Freeflyer")
-
-# -------------------------
-# Lower body
-# -------------------------
-plot_group(df, group2, "File 1 - Lower Body")
-plot_group(df2, group2, "File 2 - Lower Body")
-
-# -------------------------
-# Upper body
-# -------------------------
-mid = len(group3) // 2
-
-plot_group(df, group3[:mid], "File 1 - Upper Body (1)")
-plot_group(df2, group3[:mid], "File 2 - Upper Body (1)")
-
-plot_group(df, group3[mid:], "File 1 - Upper Body (2)")
-plot_group(df2, group3[mid:], "File 2 - Upper Body (2)")
-plt.show()
-def plot_grfm(df, title):
-    fig, axes = plt.subplots(3, 2, figsize=(15, 10))
-
-    sides = [1, 2]
-    categories = ["Force", "Moment", "COP"]
-
-    for j, side in enumerate(sides):
-
-        # --- Force ---
-        force_cols = [f"F{x}{side}_glob" for x in ["x", "y", "z"]]
-        axes[0, j].plot(df[force_cols])
-        axes[0, j].set_title(f"Side {side} - Force")
-        axes[0, j].legend(force_cols)
-        axes[0, j].grid()
-
-        # --- Moment ---
-        moment_cols = [f"M{x}{side}_glob" for x in ["x", "y", "z"]]
-        axes[1, j].plot(df[moment_cols])
-        axes[1, j].set_title(f"Side {side} - Moment")
-        axes[1, j].legend(moment_cols)
-        axes[1, j].grid()
-
-        # --- COP ---
-        cop_cols = [f"COP{x}{side}_glob" for x in ["x", "y", "z"]]
-        axes[2, j].plot(df[cop_cols])
-        axes[2, j].set_title(f"Side {side} - COP")
-        axes[2, j].legend(cop_cols)
-        axes[2, j].grid()
-
-    fig.suptitle(title)
-    plt.tight_layout()
-
-
-plot_grfm(df_grfm, "Generated data - GRFM")
-plot_grfm(df2_grfm, "Vinc/Jeremy data - GRFM")    
-plt.show()
-
-
-import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
+from pathlib import Path
 from scipy.stats import pearsonr
 
-def load_data(is_synth=True):
-    # Charge tous tes fichiers ici pour constituer une grande matrice (T, 35)
-    # Retourne une matrice X de forme (N_total, 35)
-    pass
+# --- Configuration des chemins et mapping ---
+manual_mapping = {
+    "Vincent": {"Trial112": "squat"},
+    "Jovana": {"Trial111": "squat"},
+    "Christine": {"Trial110": "squat"},
+    "Jeremy": {"Trial111": "squat"},
+    "Maria": {"Trial114": "squat"},
+    "Serge": {"Trial111": "squat"},
+    "Subject1": {"Trial111": "squat"}
+}
 
-def compare_metrics():
-    X_synth = load_data(is_synth=True)
-    X_real = load_data(is_synth=False)
+def is_squat_task(subject_name, task_name):
+    task_lower = task_name.lower()
+    if "squat" in task_lower: return True
+    if subject_name in manual_mapping:
+
+        return manual_mapping[subject_name].get(task_name) == "squat"
+    return False
+
+def load_data(is_synth=True):
+    all_X, all_F = [], []
     
-    # 1. PCA Visualization
+    if is_synth:
+        base_path = Path("DATA/generated_data/")
+        for f_grfm in base_path.glob("*_grfm.csv"):
+            f_q = f_grfm.with_name(f_grfm.name.replace("_grfm.csv", "_q.csv"))
+            if f_q.exists():
+                # On lit les valeurs. Ajuste ici si tu as des headers à ignorer
+                all_X.append(pd.read_csv(f_q).values)
+                all_F.append(pd.read_csv(f_grfm).values)
+    else:
+        base_path = Path("DATA/Vinc/")
+        for subject_dir in base_path.iterdir():
+            for trial_dir in subject_dir.iterdir():
+                if is_squat_task(subject_dir.name, trial_dir.name):
+                    f_q = trial_dir / "joints_filtered_FF.csv"
+                    f_grfm = trial_dir / "kinetics_glob_filtered.csv"
+     
+                    if f_q.exists() and f_grfm.exists():
+                        print("test")
+                        # Attention: Assure-toi que les fichiers réels n'ont pas de colonnes 'Time'
+                        # sinon fais : pd.read_csv(f_q).drop(columns=['Time']).values
+                        all_X.append(pd.read_csv(f_q).values)
+                        all_F.append(pd.read_csv(f_grfm).values)
+                        
+    # Empilement pour créer un grand dataset de comparaison
+    return np.vstack(all_X), np.vstack(all_F)
+
+def compare_datasets():
+    print("Chargement des données...")
+    X_synth, F_synth = load_data(is_synth=True)
+    X_real, F_real = load_data(is_synth=False)
+    
+    # --- 1. PCA : Comparaison de la distribution cinématique ---
     pca = PCA(n_components=2)
-    X_all = np.vstack([X_synth, X_real])
+    X_all = np.vstack([F_synth, F_real])
     pca.fit(X_all)
     
     plt.figure(figsize=(10, 5))
-    plt.scatter(pca.transform(X_synth)[:, 0], pca.transform(X_synth)[:, 1], alpha=0.1, label='Synthétique', s=1)
-    plt.scatter(pca.transform(X_real)[:, 0], pca.transform(X_real)[:, 1], alpha=0.3, label='Réel', s=2)
-    plt.legend(); plt.title("PCA du mouvement : Synthétique vs Réel")
+    plt.scatter(pca.transform(F_synth)[:, 0], pca.transform(F_synth)[:, 1], alpha=0.05, label='Synthétique', s=1)
+    plt.scatter(pca.transform(F_real)[:, 0], pca.transform(F_real)[:, 1], alpha=0.3, label='Réel', s=2)
+    plt.legend()
+    plt.title("PCA des mouvements articulaires : Synthétique vs Réel")
     plt.show()
     
-    # 2. Corrélation Fz vs Accélération Bassin (FF[2])
-    # Exemple pour une seule séquence
-    # corr_synth = pearsonr(forces_z, acc_pelvis)[0]
-    print("Vérifie bien si la corrélation Force/Mouvement est cohérente !")
+    # --- 2. Analyse physique : Corrélation Fz vs Accélération Bassin ---
+    # Remplace index 2 par la colonne correspondant à Fz (verticale) et le bassin
+    # Supposons ici que Fz est à l'index 2 et Bassin à l'index 2 aussi
+    fz_idx = 2 
+    bassin_idx = 2
+    
+    def get_acc(X):
+        # Accélération = dérivée seconde de la position
+        vel = np.gradient(X[:, bassin_idx])
+        return np.gradient(vel)
+
+    acc_synth = get_acc(X_synth)
+    acc_real = get_acc(X_real)
+    
+    corr_synth = pearsonr(F_synth[:, fz_idx], acc_synth)[0]
+    corr_real = pearsonr(F_real[:, fz_idx], acc_real)[0]
+    
+    print(f"\n--- Analyse Physique ---")
+    print(f"Corrélation Fz/Accél. (Synthétique) : {corr_synth:.3f}")
+    print(f"Corrélation Fz/Accél. (Réel) : {corr_real:.3f}")
+    
+    if abs(corr_synth - corr_real) > 0.2:
+        print("ATTENTION : Le lien physique force/mouvement est significativement différent.")
+    else:
+        print("BONNE NOUVELLE : La cohérence physique semble proche.")
+
+if __name__ == "__main__":
+    compare_datasets()
