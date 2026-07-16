@@ -303,8 +303,8 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/datasets/GRF2Kine/synth_npy_all")
-    results_dir = Path("results_full_step2motion_fm_improved")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
+    results_dir = Path("results_full_102_improved")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------- DATA --------------------------------

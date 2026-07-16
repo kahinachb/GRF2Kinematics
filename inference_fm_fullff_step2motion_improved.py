@@ -359,7 +359,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     
     # path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
-    path_joint = f"DATA/generated_q_csv/{subject_name}_squat_{trial_name}_q.csv"
+    path_joint = f"DATA/generated_102/{subject_name}_squat_{trial_name}_q.csv"
     q_ref_df = pd.read_csv(path_joint)
     position_initiale = q_ref_df.iloc[0, 0:3].values
     quaternion_initial = q_ref_df.iloc[0, 3:7].values
@@ -438,16 +438,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         "Lknee_flex_ext", "Lankle_flex_ext", "Lankle_abd_add"
     ]
 
-    upper_names = [
-        "Lumbar_flex_ext", "Lumbar_lateral_flex",
-        "Lcalvicule_x",
-        "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
-        "Lelbow_flex_ext", "Lelbow_pron_supi",
-        "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
-        "Rcalvicule_x",
-        "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
-        "Relbow_flex_ext", "Relbow_pron_supi"
-    ]
+    
 
     abs_ff_names = ["FF_X", "FF_Y", "FF_Z", "FF_quatx", "FF_quaty", "FF_quatz", "FF_quatw"]
 
@@ -509,6 +500,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
         # Jambe gauche
         i = lower_left_idx[row]
+        local_i = i - 6
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")   
         axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -524,13 +516,24 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     # --- FIGURE 2 : Upper body part 1 (Lumbar & Left side) ---
     # Colonne 0 : Lumbar (2 DOFs + cases vides) | Colonne 1 : Left (6 DOFs)
+    upper_names = [
+        "Lumbar_flex_ext", "Lumbar_lateral_flex",
+        "Lcalvicule_x",
+        "Lshoulder_flex_ext", "Lshoulder_abd_add", "Lshoulder_int_ext_rot",
+        "Lelbow_flex_ext", "Lelbow_pron_supi",
+        "Cervical_flex_ext", "Cervical_lat_bend", "Cervical_int_ext_rot",
+        "Rcalvicule_x",
+        "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot",
+        "Relbow_flex_ext", "Relbow_pron_supi"
+    ]
+
     fig, axes = plt.subplots(3, 3, figsize=(18, 10))
-    lumbar_idx = [12, 13]
-    left_col1_idx = [18, 19, 20] # Lcalvicule_x, Lshoulder_flex_ext, Lshoulder_abd_add
-    left_col2_idx = [21, 22, 23] # Lshoulder_int_ext_rot, Lelbow_flex_ext, Lelbow_pron_supi
+    lumbar_idx = [18, 19]
+    left_col1_idx = [20, 21, 22] # Lcalvicule_x, Lshoulder_flex_ext, Lshoulder_abd_add
+    left_col2_idx = [23, 24, 25] # Lshoulder_int_ext_rot, Lelbow_flex_ext, Lelbow_pron_supi
 
     for row in range(3):
-        # Lumbar (seulement 2 DOFs, on cache la 3ème case)
+        # Lumbar (seulement 2 DOFs)
         if row < len(lumbar_idx):
             i = lumbar_idx[row]
             local_i = i - 18
@@ -545,7 +548,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
         # Left side - Première partie
         i = left_col1_idx[row]
-        local_i = i - 12
+        local_i = i - 18
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
         axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -554,7 +557,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
         # Left side - Deuxième partie
         i = left_col2_idx[row]
-        local_i = i - 12
+        local_i = i - 18
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 2].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
         axes[row, 2].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -570,14 +573,14 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # --- FIGURE 3 : Upper body part 2 (Cervical & Right side) ---
     # Colonne 0 : Cervical (3 DOFs) | Colonne 1 & 2 : Right diviso en 2 (3 DOFs chacun)
     fig, axes = plt.subplots(3, 3, figsize=(18, 10))
-    cervical_idx = [20, 21, 22]
-    right_col1_idx = [23, 24, 25] # Rcalvicule_x, Rshoulder_flex_ext, Rshoulder_abd_add
-    right_col2_idx = [26, 27, 28] # Rshoulder_int_ext_rot, Relbow_flex_ext, Relbow_pron_supi
+    cervical_idx = [26, 27, 28]
+    right_col1_idx = [29, 30, 31] # Rcalvicule_x, Rshoulder_flex_ext, Rshoulder_abd_add
+    right_col2_idx = [32, 33, 34] # Rshoulder_int_ext_rot, Relbow_flex_ext, Relbow_pron_supi
 
     for row in range(3):
         # Cervical
         i = cervical_idx[row]
-        local_i = i - 12
+        local_i = i - 18
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 0].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
         axes[row, 0].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -587,7 +590,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
         # Right side - Première partie
         i = right_col1_idx[row]
-        local_i = i - 12
+        local_i = i - 18
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 1].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
         axes[row, 1].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -596,7 +599,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
         # Right side - Deuxième partie
         i = right_col2_idx[row]
-        local_i = i - 12
+        local_i = i - 18
         rmse = np.sqrt(np.mean((j_ref[:, i] - j_preds[:, i])**2))
         axes[row, 2].plot(j_ref[:, i], 'k--', alpha=0.6, label="Reference")
         axes[row, 2].plot(j_preds[:, i], 'r', linewidth=2, label="Prediction")
@@ -618,22 +621,22 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 if __name__ == "__main__":
     
     # ===== CONFIGURATION =====
-    # SUBJECT_NAME = "Christine"     
-    # TRIAL_NAME = "Trial110"           
+    # SUBJECT_NAME = "Jeremy"     
+    # TRIAL_NAME = "Trial111"           
           
-    # MODEL_PATH = "./res_fullff_weighted100/fm_biomech_model_best.pth"
-    # SCALERS_PATH = "./res_fullff_weighted100/scalers_concat.json"
+    # MODEL_PATH = "./results_fullff_102_w/fm_biomech_model_best.pth"
+    # SCALERS_PATH = "./results_fullff_102_w/scalers_concat.json"
     
     # DATA_ROOT = "processed_data_feet"
-    # OUTPUT_DIR = "./res_fullff_weighted100"
+    # OUTPUT_DIR = "./results_fullff_102_w"
 
-    SUBJECT_NAME = "subject_005"     
-    TRIAL_NAME = "variant_001_dz+0.020_dx+0.075_dy+0.008"   
+    SUBJECT_NAME = "subject_102"     
+    TRIAL_NAME = "variant_060_dz+0.010_dx+0.033_dy+0.050"   
 
-    MODEL_PATH = "./res_fullff_weighted100/fm_biomech_model_best.pth"
-    SCALERS_PATH = "./res_fullff_weighted100/scalers_concat.json"
-    DATA_ROOT = "DATA/synth_npy_all_new"
-    OUTPUT_DIR = "./res_fullff_weighted100"
+    MODEL_PATH = "./results_fullff_102_wdropout/fm_biomech_model_best.pth"
+    SCALERS_PATH = "./results_fullff_102_wdropout/scalers_concat.json"
+    DATA_ROOT = "DATA/synth_npy_102"
+    OUTPUT_DIR = "./results_fullff_102_wdropout"
     
     
     # ===== RUN INFERENCE =====

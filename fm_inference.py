@@ -222,10 +222,10 @@ def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
     torch.manual_seed(seed)               # bruit reproductible (par graine)
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    f_raw = np.concatenate(
-        [f_raw[:,-9:], f_raw[:, :9]],
-        axis=1
-    ) 
+    # f_raw = np.concatenate(
+    #     [f_raw[:,-9:], f_raw[:, :9]],
+    #     axis=1
+    # ) 
 
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -455,25 +455,25 @@ if __name__ == "__main__":
     # DATA_ROOT, OUT = "DATA/synth_npy_all", "./inference_results"
 
     SUBJECT, TRIAL = "Jeremy", "Trial111"
-    DATA_ROOT, OUT = "processed_data_feet", "./inference_results"
+    DATA_ROOT, OUT = "processed_data_feet", "./results_full_102"
 
 
     res = {}
     # même solver + même n_steps -> même NFE : seul le modèle change
     res["baseline"] = run_inference(
         SUBJECT, TRIAL,
-        model_path="results_full_step2motion_fm/fm_biomech_model_best.pth",
-        scalers_path="results_full_step2motion_fm/scalers_concat.json",
+        model_path="results_full_102/fm_biomech_model_best.pth",
+        scalers_path="results_full_102/scalers_concat.json",
         variant="baseline", solver="euler", n_steps=20, n_seeds=3,
         data_root=DATA_ROOT, output_dir=OUT,
     )
-    res["improved"] = run_inference(
-        SUBJECT, TRIAL,
-        model_path="results_full_step2motion_fm_improved/fm_biomech_model_best.pth",
-        scalers_path="results_full_step2motion_fm_improved/scalers_concat.json",
-        variant="improved", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir=OUT,
-    )
+    # res["improved"] = run_inference(
+    #     SUBJECT, TRIAL,
+    #     model_path="results_full_step2motion_fm_improved/fm_biomech_model_best.pth",
+    #     scalers_path="results_full_step2motion_fm_improved/scalers_concat.json",
+    #     variant="improved", solver="euler", n_steps=20, n_seeds=3,
+    #     data_root=DATA_ROOT, output_dir=OUT,
+    # )
 
     print("\n================  RÉCAP  ================")
     for k, r in res.items():
