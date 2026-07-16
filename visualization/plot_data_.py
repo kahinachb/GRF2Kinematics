@@ -2,11 +2,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Charger le fichier
-df = pd.read_csv("DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_q.csv")
-df2= pd.read_csv("DATA/generated_data/subject_02_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_q.csv")
+df = pd.read_csv("DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_q.csv")
+df2= pd.read_csv("DATA/Vinc/Jeremy/Trial111/joints_filtered_FF.csv")
 
-df_grfm = pd.read_csv("DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_grfm.csv")
-df2_grfm= pd.read_csv("DATA/generated_data/subject_02_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_grfm.csv")
+df_grfm = pd.read_csv("DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_grfm.csv")
+df2_grfm= pd.read_csv("DATA/Vinc/Jeremy/Trial111/kinetics_glob_filtered.csv")
 
 # -------------------------
 # GROUPES

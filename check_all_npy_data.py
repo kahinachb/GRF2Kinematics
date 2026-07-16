@@ -89,4 +89,4 @@ def analyze_hybrid_structure(output_dir: str):
     print(f"TOTAL GLOBAL : {results[300]['files'] + results[100]['files']} fichiers analysés.")
 
 if __name__ == "__main__":
-    analyze_hybrid_structure("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_all")
+    analyze_hybrid_structure("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/synth_npy_102")
