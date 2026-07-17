@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import random
 import json
+import copy
 
 def split_list(lst, train_ratio=0.7, val_ratio=0.15):
     n = len(lst)
@@ -240,14 +241,14 @@ class DiffusionTransformer(nn.Module):
         # ==========================================
         # 2. SENSOR PARTITIONING (Mémoire / Plateformes)
         # ==========================================
-        # Right: F(3), M(3), CoP(3) | Left: F(3), M(3), CoP(3) -> Total 18
+        # Right: F(3), M(3), CoP(2) | Left: F(3), M(3), CoP(2) -> Total 17
         self.embed_F_R = nn.Linear(3, embed_dim)
         self.embed_M_R = nn.Linear(3, embed_dim)
-        self.embed_CoP_R = nn.Linear(3, embed_dim)
+        self.embed_CoP_R = nn.Linear(2, embed_dim)
         
         self.embed_F_L = nn.Linear(3, embed_dim)
         self.embed_M_L = nn.Linear(3, embed_dim)
-        self.embed_CoP_L = nn.Linear(3, embed_dim)
+        self.embed_CoP_L = nn.Linear(2, embed_dim)
 
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbeddings(embed_dim),
@@ -268,7 +269,7 @@ class DiffusionTransformer(nn.Module):
             norm_first=True, 
             dropout=0.25
         )
-        self.transformer = nn.TransformerDecoder(layer, num_layers=2)
+        self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
         
         # Output projections pour reconstituer les 29 joints
         self.out_Rleg = nn.Linear(embed_dim, 6)
@@ -305,14 +306,14 @@ class DiffusionTransformer(nn.Module):
         # ==========================================
         # 3. MEMORY: Découpage des Forces (cond)
         # ==========================================
-        # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:9), L_F(9:12), L_M(12:15), L_CoP(15:18)
+        # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:8), L_F(9:12), L_M(12:15), L_CoP(15:17)
         emb_FR = self.embed_F_R(cond[:, :, 0:3])
         emb_MR = self.embed_M_R(cond[:, :, 3:6])
-        emb_CoPR = self.embed_CoP_R(cond[:, :, 6:9])
+        emb_CoPR = self.embed_CoP_R(cond[:, :, 6:8])
         
         emb_FL = self.embed_F_L(cond[:, :, 9:12])
         emb_ML = self.embed_M_L(cond[:, :, 12:15])
-        emb_CoPL = self.embed_CoP_L(cond[:, :, 15:18])
+        emb_CoPL = self.embed_CoP_L(cond[:, :, 15:17])
         
         # Concaténation temporelle -> Forme: (B, 6*W, embed_dim)
         cond_emb = torch.cat([emb_FR, emb_MR, emb_CoPR, emb_FL, emb_ML, emb_CoPL], dim=1)
@@ -400,7 +401,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
 
-    results_dir = Path("results_full_102")
+    results_dir = Path("results_woutCz_102")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -439,7 +440,7 @@ def run_experiment():
     random.shuffle(unique_subjects)
 
 
-    train_subjects, val_subjects, test_subjects = split_dataset(
+    train_samples, val_samples, test_samples = split_dataset(
     all_samples,
     train_ratio=0.7,
     val_ratio=0.15,
@@ -447,11 +448,6 @@ def run_experiment():
 )
 
 
-    train_subs = [s for s in all_samples if s["subject"] in train_subjects]
-    val_subs = [s for s in all_samples if s["subject"] in val_subjects]
-    test_subs = [s for s in all_samples if s["subject"] in test_subjects]
-
-    
     def get_pairs(samples):
 
         pairs = []
@@ -467,23 +463,51 @@ def run_experiment():
         return pairs
 
 
-    train_pairs = get_pairs(train_subjects)
-    print("train_pairs", train_pairs)
-    input()
+    train_pairs = get_pairs(train_samples)
     stats = compute_and_save_stats(train_pairs, results_dir /"scalers_concat.json")
     
     train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats), batch_size=64, shuffle=True,num_workers=8,pin_memory=True,drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subjects), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
+    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_samples), stats=stats), batch_size=64,num_workers=8,pin_memory=True)
 
     model = DiffusionTransformer().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2) 
+
+    # Keep this disabled for the baseline experiment.  When enabled, EMA is
+    # evaluated and checkpointed separately from the ordinary model.
+    use_ema = False
+    ema_decay = 0.995
+    ema_model = None
+    if use_ema:
+        ema_model = copy.deepcopy(model).eval()
+        for parameter in ema_model.parameters():
+            parameter.requires_grad_(False)
     
     print(f"Nombre de paramètres : {count_parameters(model):,}")
-    train_losses, val_losses = [], []
+    train_losses, val_losses, ema_val_losses = [], [], []
 
     epochs = 250
     print(f"\n[START] Entraînement fm...")
     best_val_loss = float('inf')
+    best_ema_val_loss = float('inf')
+
+    def validation_loss(network):
+        """Estimate the Flow Matching validation loss for one set of weights."""
+        network.eval()
+        total_loss = 0.0
+        with torch.no_grad():
+            for f, j in val_loader:
+                f, j = f.to(device), j.to(device)
+                B = j.shape[0]
+                x_1 = j
+                x_0 = torch.randn_like(x_1)
+                t = torch.rand((B, 1, 1), device=device)
+                x_t = t * x_1 + (1 - t) * x_0
+                v_target = x_1 - x_0
+                t_model = (t.view(B) * 1000.0).to(torch.float32)
+                v_pred = network(x_t, t_model, f)
+                total_loss += nn.functional.mse_loss(v_pred, v_target).item()
+        return total_loss / len(val_loader)
+
     for epoch in range(epochs):
         model.train()
         t_loss = 0
@@ -520,46 +544,17 @@ def run_experiment():
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            if ema_model is not None:
+                with torch.no_grad():
+                    for ema_parameter, parameter in zip(ema_model.parameters(), model.parameters()):
+                        ema_parameter.mul_(ema_decay).add_(parameter, alpha=1.0 - ema_decay)
             t_loss += loss.item()
         
-        model.eval()
-        v_loss = 0
-        with torch.no_grad():
-            for f, j in val_loader:
-                f, j = f.to(device), j.to(device)
-                B = j.shape[0]
-                
-                # 1. Définition de la cible (donnée) et de la source (bruit pur)
-                x_1 = j 
-                x_0 = torch.randn_like(x_1)
-                
-                # 2. Tirage du temps t entre 0 et 1
-                t = torch.rand((B, 1, 1), device=device)
-                
-                # 3. Interpolation linéaire (Rectified Flow) vers l'état t
-                x_t = t * x_1 + (1 - t) * x_0
-                
-                # 4. La vitesse théorique parfaite (ce qu'on cherche à approcher)
-                v_target = x_1 - x_0
-                
-                # Adaptation du format du temps pour ton SinusoidalTimeEmbeddings
-                t_model = (t.squeeze() * 1000.0).to(torch.float32)
-                
-                # 5. Le modèle prédit la vitesse
-                v_pred = model(x_t, t_model, f)
-                
-                # 6. Calcul de la loss (Mean Squared Error)
-                loss = nn.MSELoss()(v_pred, v_target)
-                v_loss += loss.item()
-        
-        train_losses.append(t_loss/len(train_loader))
-        val_losses.append(v_loss/len(val_loader))
-        print(f"Epoch {epoch:02d} | Train Loss: {train_losses[-1]:.6f} | Val Loss: {val_losses[-1]:.6f}")
-
         avg_train_loss = t_loss / len(train_loader)
-        avg_val_loss = v_loss / len(val_loader)
+        avg_val_loss = validation_loss(model)
         train_losses.append(avg_train_loss)
         val_losses.append(avg_val_loss)
+        message = f"Epoch {epoch:02d} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}"
 
         if avg_val_loss < best_val_loss:
             print(f"--> Validation loss improved from {best_val_loss:.6f} to {avg_val_loss:.6f}. Saving model...")
@@ -568,13 +563,23 @@ def run_experiment():
             # Save the model state dict specifically as the "best" model
             torch.save(model.state_dict(), results_dir / "fm_biomech_model_best.pth")
 
+        if ema_model is not None:
+            avg_ema_val_loss = validation_loss(ema_model)
+            ema_val_losses.append(avg_ema_val_loss)
+            message += f" | EMA Val Loss: {avg_ema_val_loss:.6f}"
+            if avg_ema_val_loss < best_ema_val_loss:
+                best_ema_val_loss = avg_ema_val_loss
+                torch.save(ema_model.state_dict(), results_dir / "fm_biomech_model_ema_best.pth")
+
+        print(message)
+
     torch.save(model.state_dict(), results_dir /"fm_biomech_model_concat.pth")
 
     # --- INFERENCE SUR TEST (FENÊTRE) ---
     print("[INF] Génération d'un exemple de test...")
     print("\n[INFO] Chargement du meilleur modèle pour l'inférence...")
     model.load_state_dict(torch.load(results_dir / "fm_biomech_model_best.pth"))
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subjects), stats=stats)
+    test_ds = BiomechDiffusionDataset(get_pairs(test_samples), stats=stats)
     f_in, j_ref = test_ds[random.randint(0, len(test_ds)-1)]
     f_in = f_in.unsqueeze(0).to(device)
     
@@ -613,7 +618,7 @@ def run_experiment():
 
     # --- INFERENCE COMPLÈTE ---
     print("\n[INF] Inférence sur un essai COMPLET...")
-    test_pairs = get_pairs(test_subjects)
+    test_pairs = get_pairs(test_samples)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
     ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, n_steps=20)
@@ -622,9 +627,10 @@ def run_experiment():
     plot_joints(ref_full, pred_full, 12, 29, results_dir/"fig2.png")
     
     plt.figure(); plt.plot(train_losses, label="Train"); plt.plot(val_losses, label="Val")
+    if ema_val_losses:
+        plt.plot(ema_val_losses, label="EMA Val")
     plt.title("Loss History"); plt.legend(); plt.savefig(results_dir /"loss_curve_concat.png"); plt.close()
     print(f"\n[FINISH] Résultats sauvegardés.{results_dir}")
 
 if __name__ == "__main__":
     run_experiment()
-

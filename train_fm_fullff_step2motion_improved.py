@@ -178,10 +178,6 @@ class BiomechDataset(Dataset):
         self.samples = []
         for f_path, j_path in file_list:
             f_data = np.load(f_path).astype(np.float32)
-            keep = [0, 1, 2, 3, 4, 5, 6, 7,
-        9, 10, 11, 12, 13, 14, 15, 16]
-            f_data = f_data[..., keep]
-
             j_data = np.load(j_path).astype(np.float32)        # (T, 35) : FF + 29 joints
             for i in range(0, len(f_data) - window_size + 1, window_size // 2):
                 self.samples.append((f_data[i:i + window_size], j_data[i:i + window_size]))
@@ -205,10 +201,6 @@ def compute_and_save_stats(file_list, save_path):
     for f_p, j_p in file_list:
         all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)       # j_cat : (N, 35), FF inclus
-    keep = [0, 1, 2, 3, 4, 5, 6, 7,
-        9, 10, 11, 12, 13, 14, 15, 16]
-    f_cat = f_cat[..., keep]
-    
     stats = {
         'f_m': f_cat.mean(axis=0), 'f_s': f_cat.std(axis=0),
         'j_m': j_cat.mean(axis=0), 'j_s': j_cat.std(axis=0),
@@ -262,14 +254,12 @@ class FlowTransformer(nn.Module):
         self.embed_Lleg = nn.Linear(6, embed_dim)
         self.embed_Upper = nn.Linear(17, embed_dim)
         # --- capteurs (mémoire) : 6 blocs ---
-        self.embed_F_R = nn.Linear(3, embed_dim // 2)
-        self.embed_M_R = nn.Linear(3, embed_dim // 2)
-        self.embed_CoP_R = nn.Linear(2, embed_dim *2)
-        self.embed_F_L = nn.Linear(3, embed_dim // 2)
-        self.embed_M_L = nn.Linear(3, embed_dim // 2)
-        self.embed_CoP_L = nn.Linear(2, embed_dim *2)
-
-        self.proj_CoP = nn.Linear(embed_dim * 2, embed_dim)
+        self.embed_F_R = nn.Linear(3, embed_dim)
+        self.embed_M_R = nn.Linear(3, embed_dim)
+        self.embed_CoP_R = nn.Linear(3, embed_dim)
+        self.embed_F_L = nn.Linear(3, embed_dim)
+        self.embed_M_L = nn.Linear(3, embed_dim)
+        self.embed_CoP_L = nn.Linear(3, embed_dim)
 
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbeddings(embed_dim),
@@ -314,11 +304,10 @@ class FlowTransformer(nn.Module):
         cond_blocks = [
             self.embed_F_R(cond[:, :, 0:3]),
             self.embed_M_R(cond[:, :, 3:6]),
-            
-            self.proj_CoP(self.embed_CoP_R(cond[:, :, 6:8])), 
-            self.embed_F_L(cond[:, :, 8:11]),  
-            self.embed_M_L(cond[:, :, 11:14]), 
-            self.proj_CoP(self.embed_CoP_L(cond[:, :, 14:16])), 
+            self.embed_CoP_R(cond[:, :, 6:9]),
+            self.embed_F_L(cond[:, :, 9:12]),
+            self.embed_M_L(cond[:, :, 12:15]),
+            self.embed_CoP_L(cond[:, :, 15:18]),
         ]
         cond_blocks = [self.pos_encoder(b) + self.seg_cond[i] for i, b in enumerate(cond_blocks)]
         cond_emb = torch.cat(cond_blocks, dim=1) + t_emb                  # (B, 6W, D)
@@ -361,10 +350,6 @@ def sample_heun(model, f_cond, n_steps=20):
 def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    keep = [0, 1, 2, 3, 4, 5, 6, 7,
-        9, 10, 11, 12, 13, 14, 15, 16]
-    f_raw = f_raw[..., keep]
-
     j_raw = np.load(j_path).astype(np.float32)          # (T, 35), FF inclus
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
 
@@ -420,7 +405,7 @@ def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
-    results_dir = Path("results_fullff_102")
+    results_dir = Path("res_fullff_weighted100")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
@@ -547,7 +532,6 @@ def run_experiment():
         with torch.no_grad():
             for bi, (f, j) in enumerate(val_loader):
                 f = f.to(device, non_blocking=True)
-                print(f"Forme de input {f.shape}")
                 j = j.to(device, non_blocking=True)
                 B = j.shape[0]
 
@@ -559,7 +543,6 @@ def run_experiment():
                 v_target = x_1 - x_0
 
                 v_pred = model(x_t, t.view(B), f)
-                print(f"Forme de sortie {v_pred.shape}")
                 
                 # --- WEIGHTED MSE (Validation) ---
                 raw_loss = (v_pred - v_target) ** 2

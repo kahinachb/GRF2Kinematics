@@ -359,7 +359,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 
     
     # path_joint = f"DATA/Vinc/{subject_name}/{trial_name}/joints_filtered_FF.csv"
-    path_joint = f"DATA/generated_102/{subject_name}_squat_{trial_name}_q.csv"
+    path_joint = f"DATA/generated_data/{subject_name}_squat_{trial_name}_q.csv"
     q_ref_df = pd.read_csv(path_joint)
     position_initiale = q_ref_df.iloc[0, 0:3].values
     quaternion_initial = q_ref_df.iloc[0, 3:7].values
@@ -630,12 +630,12 @@ if __name__ == "__main__":
     # DATA_ROOT = "processed_data_feet"
     # OUTPUT_DIR = "./results_fullff_102_w"
 
-    SUBJECT_NAME = "subject_102"     
-    TRIAL_NAME = "variant_060_dz+0.010_dx+0.033_dy+0.050"   
+    SUBJECT_NAME = "subject_11"     
+    TRIAL_NAME = "variant_002_dz+0.025_dx+0.070_dy-0.007"   
 
     MODEL_PATH = "./results_fullff_102_wdropout/fm_biomech_model_best.pth"
     SCALERS_PATH = "./results_fullff_102_wdropout/scalers_concat.json"
-    DATA_ROOT = "DATA/synth_npy_102"
+    DATA_ROOT = "DATA/synth_npy_all"
     OUTPUT_DIR = "./results_fullff_102_wdropout"
     
     

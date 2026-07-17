@@ -382,11 +382,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # ===== 3. DATA FILES (ta logique) =====
     print("[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
-    # f_path = data_path / "kinetics_deltaf.npy"
-    # j_path = data_path / "all_joints_deltaf.npy"
+    f_path = data_path / "kinetics_deltaf.npy"
+    j_path = data_path / "all_joints_deltaf.npy"
 
-    f_path = data_path / "kinetics_glob.npy"
-    j_path = data_path / "all_joints.npy"
+    # f_path = data_path / "kinetics_glob.npy"
+    # j_path = data_path / "all_joints.npy"
 
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -451,11 +451,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 #  EXEMPLE D'APPEL — comparaison à budget ÉGAL (même solver, même n_steps)
 # =====================================================================
 if __name__ == "__main__":
-    # SUBJECT, TRIAL = "subject_11", "variant_008_dz+0.025_dx-0.025_dy+0.030"
-    # DATA_ROOT, OUT = "DATA/synth_npy_all", "./inference_results"
+    SUBJECT, TRIAL = "subject_001", "variant_002_dz+0.025_dx+0.070_dy-0.007"
+    DATA_ROOT, OUT = "DATA/synth_npy_all_new", "./results_full_102_improved"
 
-    SUBJECT, TRIAL = "Jeremy", "Trial111"
-    DATA_ROOT, OUT = "processed_data_feet", "./results_full_102"
+    # SUBJECT, TRIAL = "Jeremy", "Trial111"
+    # DATA_ROOT, OUT = "processed_data_feet", "./results_full_102_improved"
 
 
     res = {}
@@ -465,15 +465,15 @@ if __name__ == "__main__":
         model_path="results_full_102/fm_biomech_model_best.pth",
         scalers_path="results_full_102/scalers_concat.json",
         variant="baseline", solver="euler", n_steps=20, n_seeds=3,
+        data_root=DATA_ROOT, output_dir="./results_full_102",
+    )
+    res["improved"] = run_inference(
+        SUBJECT, TRIAL,
+        model_path="results_full_102_improved/fm_biomech_model_best.pth",
+        scalers_path="results_full_102_improved/scalers_concat.json",
+        variant="improved", solver="euler", n_steps=20, n_seeds=3,
         data_root=DATA_ROOT, output_dir=OUT,
     )
-    # res["improved"] = run_inference(
-    #     SUBJECT, TRIAL,
-    #     model_path="results_full_step2motion_fm_improved/fm_biomech_model_best.pth",
-    #     scalers_path="results_full_step2motion_fm_improved/scalers_concat.json",
-    #     variant="improved", solver="euler", n_steps=20, n_seeds=3,
-    #     data_root=DATA_ROOT, output_dir=OUT,
-    # )
 
     print("\n================  RÉCAP  ================")
     for k, r in res.items():
