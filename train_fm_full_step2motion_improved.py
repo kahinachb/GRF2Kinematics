@@ -394,7 +394,7 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
+    data_root = Path("DATA/synth_npy_102")
     results_dir = Path("results_full_102_improved")
     results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -439,12 +439,8 @@ def run_experiment():
     all_samples,
     train_ratio=0.7,
     val_ratio=0.15,
-    seed=42,
-)
-    train_subs = [s for s in all_samples if s["subject"] in train_subjects]
-    val_subs = [s for s in all_samples if s["subject"] in val_subjects]
-    test_subs = [s for s in all_samples if s["subject"] in test_subjects]
-    
+    seed=42,)
+
 
     def get_pairs(samples):
         return [(s["kinetics"], s["joints"]) for s in samples if s["kinetics"].exists() and s["joints"].exists()]

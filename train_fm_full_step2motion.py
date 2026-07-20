@@ -8,6 +8,43 @@ from pathlib import Path
 import random
 import json
 import copy
+import pinocchio as pin
+
+from utils.model_utils import build_human_model
+
+
+GRAVITY_M_S2 = 9.81
+SYNTH_URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf")
+URDF_MESHES_PATH = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf"
+
+
+def body_weight_newtons(kinetics_path, cache, urdf_dir=SYNTH_URDF_DIR):
+    """Return the simulated subject's body weight from its URDF mass."""
+    subject = Path(kinetics_path).parent.parent.name
+    if subject not in cache:
+        urdf_path = Path(urdf_dir) / f"human_{subject}.urdf"
+        if not urdf_path.exists():
+            raise FileNotFoundError(f"URDF not found for {subject}: {urdf_path}")
+        model_h = build_human_model(str(urdf_path), URDF_MESHES_PATH)[0]
+        mass_kg = float(pin.computeTotalMass(model_h))
+        if mass_kg <= 0:
+            raise ValueError(f"Invalid URDF mass for {subject}: {mass_kg} kg")
+        cache[subject] = mass_kg * GRAVITY_M_S2
+        print(f"[BW] {subject}: {mass_kg:.2f} kg ({cache[subject]:.2f} N)")
+    return cache[subject]
+
+
+def normalize_grfm_by_body_weight(grfm, body_weight_n):
+    """Normalize forces and moments of both feet by body weight; keep COP in m.
+
+    Layout is [F(3), M(3), COP(3)] for the right foot, then the left foot.
+    Forces become BW-normalized and moments become Nm/BW.  COP is geometric and
+    must not be divided by body weight.
+    """
+    normalized = np.asarray(grfm, dtype=np.float32).copy()
+    for offset in (0, 9):
+        normalized[:, offset:offset + 6] /= body_weight_n
+    return normalized
 
 def split_list(lst, train_ratio=0.7, val_ratio=0.15):
     n = len(lst)
@@ -157,8 +194,12 @@ def plot_joints(ref, pred, start, end, filename):
 class BiomechDiffusionDataset(Dataset):
     def __init__(self, file_list, window_size=128, stats=None):
         self.samples = []
+        body_weights = {}
         for f_path, j_path in file_list:
             f_data, j_data = np.load(f_path).astype(np.float32), np.load(j_path).astype(np.float32)
+            f_data = normalize_grfm_by_body_weight(
+                f_data, body_weight_newtons(f_path, body_weights)
+            )
             j_data = j_data[:, 6:]
             
             for i in range(0, len(f_data) - window_size + 1, window_size // 2):
@@ -178,8 +219,13 @@ class BiomechDiffusionDataset(Dataset):
 def compute_and_save_stats(file_list, save_path):
     print("\n[INFO] Calcul des scalers sur le Train Set...")
     all_f, all_j = [], []
+    body_weights = {}
     for f_p, j_p in file_list:
-        all_f.append(np.load(f_p)); all_j.append(np.load(j_p))
+        f_data = np.load(f_p).astype(np.float32)
+        all_f.append(normalize_grfm_by_body_weight(
+            f_data, body_weight_newtons(f_p, body_weights)
+        ))
+        all_j.append(np.load(j_p))
     f_cat, j_cat = np.vstack(all_f), np.vstack(all_j)
     j_cat= j_cat[:, 6:]
     
@@ -244,11 +290,11 @@ class DiffusionTransformer(nn.Module):
         # Right: F(3), M(3), CoP(2) | Left: F(3), M(3), CoP(2) -> Total 17
         self.embed_F_R = nn.Linear(3, embed_dim)
         self.embed_M_R = nn.Linear(3, embed_dim)
-        self.embed_CoP_R = nn.Linear(2, embed_dim)
+        self.embed_CoP_R = nn.Linear(3, embed_dim)
         
         self.embed_F_L = nn.Linear(3, embed_dim)
         self.embed_M_L = nn.Linear(3, embed_dim)
-        self.embed_CoP_L = nn.Linear(2, embed_dim)
+        self.embed_CoP_L = nn.Linear(3, embed_dim)
 
         self.time_mlp = nn.Sequential(
             SinusoidalTimeEmbeddings(embed_dim),
@@ -309,11 +355,11 @@ class DiffusionTransformer(nn.Module):
         # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:8), L_F(9:12), L_M(12:15), L_CoP(15:17)
         emb_FR = self.embed_F_R(cond[:, :, 0:3])
         emb_MR = self.embed_M_R(cond[:, :, 3:6])
-        emb_CoPR = self.embed_CoP_R(cond[:, :, 6:8])
+        emb_CoPR = self.embed_CoP_R(cond[:, :, 6:9])
         
         emb_FL = self.embed_F_L(cond[:, :, 9:12])
         emb_ML = self.embed_M_L(cond[:, :, 12:15])
-        emb_CoPL = self.embed_CoP_L(cond[:, :, 15:17])
+        emb_CoPL = self.embed_CoP_L(cond[:, :, 15:18])
         
         # Concaténation temporelle -> Forme: (B, 6*W, embed_dim)
         cond_emb = torch.cat([emb_FR, emb_MR, emb_CoPR, emb_FL, emb_ML, emb_CoPL], dim=1)
@@ -339,9 +385,12 @@ class DiffusionTransformer(nn.Module):
 # ==========================================
 # 3. FONCTION INFERENCE COMPLETE (SLIDING WINDOW)
 # ==========================================
-def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
+def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64,
+                       n_steps=20, body_weight_n=None):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
+    if body_weight_n is not None:
+        f_raw = normalize_grfm_by_body_weight(f_raw, body_weight_n)
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
     
@@ -399,9 +448,9 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all")
 
-    results_dir = Path("results_woutCz_102")
+    results_dir = Path("results_full_all_BW")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -621,7 +670,11 @@ def run_experiment():
     test_pairs = get_pairs(test_samples)
     random_trial = random.choice(test_pairs)
     print("random_trial for test", random_trial)
-    ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, n_steps=20)
+    test_weight_n = body_weight_newtons(random_trial[0], {})
+    ref_full, pred_full = predict_full_trial(
+        model, random_trial[0], random_trial[1], stats, device,
+        n_steps=20, body_weight_n=test_weight_n,
+    )
 
     plot_joints(ref_full, pred_full, 0, 12, results_dir/"fig1.png")
     plot_joints(ref_full, pred_full, 12, 29, results_dir/"fig2.png")

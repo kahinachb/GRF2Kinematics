@@ -20,7 +20,7 @@ from pathlib import Path
 import meshcat.geometry as g
 
 
-which = 'Anais'
+which = 'Vinc'
 fps = 100
 dt = 1.0 / fps
 

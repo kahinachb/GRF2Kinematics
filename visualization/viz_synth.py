@@ -24,19 +24,19 @@ which = 'Vinc'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
+# urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 # cop_csv = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
 
 
-# urdf_path ="DATA/urdf/human_subject_06.urdf"
-# path_joint = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_q.csv"
-# cop_csv = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_grfm.csv"
+urdf_path ="DATA/10_urdf/human_subject_06.urdf"
+path_joint = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_q.csv"
+cop_csv = f"DATA/generated_data/subject_06_squat_variant_000_dz+0.025_dx+0.070_dy+0.020_grfm.csv"
 
 
 # urdf_path ="DATA/urdf_scaled/URDFS/subject_001_77.4kg.urdf"
-path_joint = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_q.csv"
-cop_csv = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_grfm.csv"
+# path_joint = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_q.csv"
+# cop_csv = f"DATA/generated_102/subject_102_squat_variant_000_dz+0.075_dx-0.055_dy+0.050_grfm.csv"
 
 
 meshes= ['middle_pelvis_0','left_upperleg_0','right_upperleg_0','left_lowerleg_0','right_lowerleg_0','left_lowerleg_1','right_lowerleg_1',

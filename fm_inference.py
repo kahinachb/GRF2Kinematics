@@ -235,7 +235,19 @@ def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
     overlap = window_size - stride
     dt = 1.0 / n_steps
 
-    for start in range(0, T - window_size + 1, stride):
+    if T < window_size:
+        raise ValueError(
+            f"Trial has {T} frames, shorter than window_size={window_size}."
+        )
+
+    # Regular windows may not land exactly on T - window_size.  Append one
+    # final window ending at T so every frame receives a prediction.
+    starts = list(range(0, T - window_size + 1, stride))
+    last_start = T - window_size
+    if starts[-1] != last_start:
+        starts.append(last_start)
+
+    for start in starts:
         end = start + window_size
         f_win = f_norm[start:end].unsqueeze(0).to(device)
         has_ctx = start > 0
@@ -451,11 +463,12 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 #  EXEMPLE D'APPEL — comparaison à budget ÉGAL (même solver, même n_steps)
 # =====================================================================
 if __name__ == "__main__":
-    SUBJECT, TRIAL = "subject_001", "variant_002_dz+0.025_dx+0.070_dy-0.007"
-    DATA_ROOT, OUT = "DATA/synth_npy_all_new", "./results_full_102_improved"
+    SUBJECT, TRIAL = "subject_102", "variant_194_dz-0.200_dx-0.020_dy+0.012"
+    DATA_ROOT = "DATA/synth_npy_102"
+
 
     # SUBJECT, TRIAL = "Jeremy", "Trial111"
-    # DATA_ROOT, OUT = "processed_data_feet", "./results_full_102_improved"
+    # DATA_ROOT = "processed_data_feet"
 
 
     res = {}
@@ -472,7 +485,7 @@ if __name__ == "__main__":
         model_path="results_full_102_improved/fm_biomech_model_best.pth",
         scalers_path="results_full_102_improved/scalers_concat.json",
         variant="improved", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir=OUT,
+        data_root=DATA_ROOT, output_dir="results_full_102_improved",
     )
 
     print("\n================  RÉCAP  ================")

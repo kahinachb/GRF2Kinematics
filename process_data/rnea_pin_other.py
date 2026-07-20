@@ -276,34 +276,34 @@ def process_subject_trial(subject, trial_num):
 
     print("Original shape :", q_ref.shape)
 
-    # for i in range(n_samples-1):
-    #     R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
-    #     p_t = q_ref[i, 0:3]
+    for i in range(n_samples-1):
+        R_t = pin.Quaternion(q_ref[i, 3:7]).matrix()
+        p_t = q_ref[i, 0:3]
         
-    #     # --- Frame suivante (t+1) ---
-    #     R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
-    #     p_next = q_ref[i+1, 0:3]
+        # --- Frame suivante (t+1) ---
+        R_next = pin.Quaternion(q_ref[i+1, 3:7]).matrix()
+        p_next = q_ref[i+1, 0:3]
         
-    #     # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
-    #     # On projette le déplacement global dans le repère de la frame actuelle
-    #     delta_pos_local[i] = R_t.T @ (p_next - p_t)
+        # 1. Translation locale : "De combien j'ai avancé/glissé par rapport à ma position actuelle ?"
+        # On projette le déplacement global dans le repère de la frame actuelle
+        delta_pos_local[i] = R_t.T @ (p_next - p_t)
         
-    #     # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
-    #     # On calcule la rotation relative : R_rel = R_t^T * R_next
-    #     R_rel = R_t.T @ R_next
-    #     # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
-    #     delta_rot_local[i] = pin.log3(R_rel)
+        # 2. Rotation locale : "De combien j'ai tourné sur moi-même ?"
+        # On calcule la rotation relative : R_rel = R_t^T * R_next
+        R_rel = R_t.T @ R_next
+        # On transforme cette matrice en vecteur de rotation (plus facile pour l'IA que 9 chiffres)
+        delta_rot_local[i] = pin.log3(R_rel)
 
-    q_ref = q_ref[:, :]
+    q_ref = q_ref[1:, 7:]
 
     
 
     # reconstruire nouveau q_ref
-    # q_ref = np.concatenate([
-    #     delta_pos_local,
-    #     delta_rot_local,
-    #     q_ref
-    # ], axis=1)
+    q_ref = np.concatenate([
+        delta_pos_local,
+        delta_rot_local,
+        q_ref
+    ], axis=1)
 
     
     print("New shape      :", q_ref.shape)
@@ -479,27 +479,27 @@ def process_subject_trial(subject, trial_num):
     })
 
 
-    # kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
-    # kinetics_filtered_df.to_csv(kinetics_file, index=False)
-    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
+    kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
+    kinetics_filtered_df.to_csv(kinetics_file, index=False)
+    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
 
     # kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered.csv")
     # kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
     # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
 
     # # --- Sauvegarde joints filtrés ---
-    # new_joint_names = [
-    # "delta_x",
-    # "delta_y",
-    # "delta_z",
-    # "delta_rx",
-    # "delta_ry",
-    # "delta_rz"
-    # ] + joint_names[7:]
-    # joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=joint_names)
-    # joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
-    # joints_filtered_df.to_csv(joints_file, index=False)
-    # print(f"  Saved filtered joints: {joints_file}")
+    new_joint_names = [
+    "delta_x",
+    "delta_y",
+    "delta_z",
+    "delta_rx",
+    "delta_ry",
+    "delta_rz"
+    ] + joint_names[7:]
+    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=new_joint_names)
+    joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
+    joints_filtered_df.to_csv(joints_file, index=False)
+    print(f"  Saved filtered joints: {joints_file}")
 
 
 

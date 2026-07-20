@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
+import pinocchio as pin
+
+from utils.model_utils import build_human_model, get_foot_pose
 
 KINETICS_COLS = [
     'Fx1_glob', 'Fy1_glob', 'Fz1_glob', 'Mx1_glob', 'My1_glob', 'Mz1_glob', 'COPx1_glob', 'COPy1_glob', 'COPz1_glob',
@@ -22,11 +25,80 @@ JOINTS_REORDER = [
     "Rshoulder_flex_ext", "Rshoulder_abd_add", "Rshoulder_int_ext_rot", "Relbow_flex_ext", "Relbow_pron_supi"
 ]
 
+# Same marker-based foot frames and right/left output ordering as
+# process_data/glob_to_feet.py for the Vinc dataset.
+FOOT_MARKERS = [
+    'r_mankle_study', 'r_ankle_study', 'r_toe_study', 'r_5meta_study', 'r_calc_study',
+    'L_mankle_study', 'L_ankle_study', 'L_toe_study', 'L_5meta_study', 'L_calc_study',
+]
+URDF_MESHES_PATH = "motif/model/human_urdf"
+CONTACT_THRESHOLD_N = 20.0
+
+
+def _wrench_in_foot_frame(force_world, moment_world, cop_world, foot_pose):
+    """Express a world wrench and COP in one local foot frame.
+
+    The output convention intentionally matches glob_to_feet.py: the first
+    9-feature block is the right foot and the second is the left foot.
+    """
+    rotation, position = foot_pose[:3, :3], foot_pose[:3, 3]
+    force_world = force_world.copy()
+
+    # Match the real-data converter's plate vertical-force convention.
+    if force_world[2] < -CONTACT_THRESHOLD_N:
+        force_world[2] *= -1.0
+    if abs(force_world[2]) <= CONTACT_THRESHOLD_N:
+        return np.zeros(3), np.zeros(3), np.zeros(3)
+
+    force_local = rotation.T @ force_world
+    moment_local = rotation.T @ (moment_world - np.cross(position, force_world))
+    cop_local = rotation.T @ (cop_world - position)
+    return force_local, moment_local, cop_local
+
+
+def global_grfm_to_feet(raw_joints, global_grfm, model_h):
+    """Convert generated global GRFM to right/left local-foot GRFM.
+
+    ``raw_joints`` must use ``JOINTS_REORDER`` (global free-flyer followed by
+    the 29 articulated angles).  In generated_data, plate 1 is the left foot
+    and plate 2 is the right foot.  The returned array is deliberately
+    reordered to right then left so it matches the real kinetics_feet.npy
+    convention produced by glob_to_feet.py.
+    """
+    if len(raw_joints) != len(global_grfm):
+        raise ValueError(f"q/GRFM length mismatch: {len(raw_joints)} vs {len(global_grfm)}")
+
+    data_h = model_h.createData()
+    local_grfm = np.zeros_like(global_grfm, dtype=np.float32)
+    marker_ids = {name: model_h.getFrameId(name) for name in FOOT_MARKERS}
+    if any(frame_id >= model_h.nframes for frame_id in marker_ids.values()):
+        missing = [name for name, frame_id in marker_ids.items() if frame_id >= model_h.nframes]
+        raise ValueError(f"URDF is missing required foot-marker frames: {missing}")
+
+    for i, (q_curr, wrench) in enumerate(zip(raw_joints, global_grfm)):
+        pin.forwardKinematics(model_h, data_h, q_curr)
+        pin.updateFramePlacements(model_h, data_h)
+        markers = {name: data_h.oMf[frame_id].translation for name, frame_id in marker_ids.items()}
+        right_foot = get_foot_pose(markers, side='right')
+        left_foot = get_foot_pose(markers, side='left')
+
+        f_left, m_left, cop_left = _wrench_in_foot_frame(
+            wrench[0:3], wrench[3:6], wrench[6:9], left_foot
+        )
+        f_right, m_right, cop_right = _wrench_in_foot_frame(
+            wrench[9:12], wrench[12:15], wrench[15:18], right_foot
+        )
+        local_grfm[i] = np.concatenate([f_right, m_right, cop_right, f_left, m_left, cop_left])
+
+    return local_grfm
+
 #ff to delta
-def process_folder_to_local_delta(input_folder, output_base):
+def process_folder_to_local_delta(input_folder, output_base, make_feet_kinetics=False,
+                                  urdf_dir="DATA/10_urdf"):
     input_path = Path(input_folder)
     output_path = Path(output_base)
     joint_files = glob.glob(str(input_path / "*q.csv"))
+    models = {}
     
     for j_file in joint_files:
         trial_id = os.path.basename(j_file).replace("_q", "").replace(".csv", "")
@@ -99,78 +171,28 @@ def process_folder_to_local_delta(input_folder, output_base):
             trial_dir.mkdir(parents=True, exist_ok=True)
             np.save(trial_dir / "kinetics_deltaf.npy", arr_k_sync)
             np.save(trial_dir / "all_joints_deltaf.npy", arr_j_final)
+
+            if make_feet_kinetics:
+                if subject_name not in models:
+                    urdf_path = Path(urdf_dir) / f"human_{subject_name}.urdf"
+                    if not urdf_path.exists():
+                        raise FileNotFoundError(f"URDF not found: {urdf_path}")
+                    models[subject_name] = build_human_model(str(urdf_path), URDF_MESHES_PATH)[0]
+                feet_grfm = global_grfm_to_feet(raw_joints, arr_k, models[subject_name])
+                # Same frame-1 alignment as the global kinetics and q target.
+                np.save(trial_dir / "kinetics_feet_deltaf.npy", feet_grfm[1:])
             
             print(f"  [OK] {trial_id} : {arr_j_final.shape}")
 
         except Exception as e:
             print(f"  [ERROR] {trial_id} : {e}")
 
-#normal ff
-def process_folder(input_folder, output_base):
-    input_path = Path(input_folder)
-    output_path = Path(output_base)
-    
-    # 1. Lister tous les fichiers "joint_filtered" pour identifier les trials
-    joint_files = glob.glob(str(input_path / "joint_filtered_*.csv"))
-    
-    print(f"Nombre de fichiers joints trouvés : {len(joint_files)}")
-
-    for j_file in joint_files:
-        # Extraire le nom du trial (tout ce qui est après 'joint_filtered_')
-        trial_id = os.path.basename(j_file).replace("joint_filtered_", "").replace(".csv", "")
-        
-        # Chercher le fichier feet_frame correspondant
-        k_file = input_path / f"feet_frame_{trial_id}.csv"
-        
-        if not k_file.exists():
-            print(f"  [SKIP] Pas de fichier kinetics pour le trial : {trial_id}")
-            continue
-
-        # Créer le dossier du trial
-        trial_dir = output_path / trial_id
-        
-        # --- ANTI-DOUBLON ---
-        if (trial_dir / "kinetics.npy").exists():
-            print(f"  [SKIP] Déjà converti : {trial_id}")
-            continue
-
-        print(f"  [PROC] Trial : {trial_id}")
-        trial_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            # --- TRAITEMENT KINETICS ---
-            df_k = pd.read_csv(k_file)
-            # On vérifie si les colonnes utilisent fR ou footR (selon ta version de code)
-            rename_map = {col: col.replace('footR', 'fR').replace('footL', 'fL') for col in df_k.columns}
-            df_k = df_k.rename(columns=rename_map)
-           
-            
-            # Sélection et conversion (Right puis Left)
-            arr_k = df_k[KINETICS_COLS].values.astype(np.float32)
-            np.save(trial_dir / "kinetics.npy", arr_k)
-
-            # --- TRAITEMENT JOINTS ---
-            df_j = pd.read_csv(j_file)
-            
-            # On gère le renommage du Freeflyer pour correspondre à ta liste JOINTS_REORDER
-            # On suppose que les 7 premières colonnes sont le FF
-            old_ff_cols = df_j.columns[:7]
-            ff_rename = {old: new for old, new in zip(old_ff_cols, JOINTS_REORDER[:7])}
-            df_j = df_j.rename(columns=ff_rename)
-
-            # Réorganisation selon ta liste précise
-            arr_j = df_j[JOINTS_REORDER].values.astype(np.float32)
-            np.save(trial_dir / "all_joints.npy", arr_j)
-
-        except Exception as e:
-            print(f"  [ERROR] Erreur sur {trial_id} : {e}")
-
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/generated_102"
+    IN_FOLDER = "DATA/generated_data"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/synth_npy_102"
+    OUT_FOLDER = "DATA/synth_npy_all"
     
-    process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER)
+    process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER, make_feet_kinetics=True)
     print("\n--- Opération terminée ---")
