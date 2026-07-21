@@ -14,6 +14,18 @@ import matplotlib.pyplot as plt
 
 from utils.model_utils import build_human_model
 
+from scipy.signal import butter, sosfiltfilt
+
+def lowpass_prediction(pred, fs=100.0, cutoff_hz=6.0, order=4):
+    sos = butter(
+        order,
+        cutoff_hz,
+        btype="low",
+        fs=fs,
+        output="sos",
+    )
+    return sosfiltfilt(sos, pred, axis=0)
+
 
 GRAVITY_M_S2 = 9.81
 URDF_MESHES_PATH = "DATA/10_urdf"
@@ -363,7 +375,7 @@ def make_plots(j_ref, j_preds, output_dir, subject_name):
             axes[row, col].grid(True)
     axes[0, 0].legend()
     plt.suptitle("Lower body joints (Right vs Left)", fontsize=16)
-    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_lower_body_joints.png", dpi=300); plt.close()
+    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_lower_body_joints_filtered.png", dpi=300); plt.close()
 
     # FIG 2 : Lumbar & Left side
     fig, axes = plt.subplots(3, 3, figsize=(18, 10))
@@ -386,7 +398,7 @@ def make_plots(j_ref, j_preds, output_dir, subject_name):
             axes[row, col].set_title(f"{upper_names[i - 12]} (RMSE: {rmse:.4f})", fontsize=10)
             axes[row, col].grid(True)
     plt.suptitle("Upper body joints - Lumbar & Left side", fontsize=16)
-    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_upper_body_lumbar_left.png", dpi=300); plt.close()
+    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_upper_body_lumbar_left_filtered.png", dpi=300); plt.close()
 
     # FIG 3 : Cervical & Right side
     fig, axes = plt.subplots(3, 3, figsize=(18, 10))
@@ -400,7 +412,7 @@ def make_plots(j_ref, j_preds, output_dir, subject_name):
             axes[row, col].grid(True)
         if row == 0: axes[row, 0].legend()
     plt.suptitle("Upper body joints - Cervical & Right side", fontsize=16)
-    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_upper_body_cervical_right.png", dpi=300); plt.close()
+    plt.tight_layout(); plt.savefig(output_dir / f"{subject_name}_upper_body_cervical_right_filtered.png", dpi=300); plt.close()
 
 
 # =====================================================================
@@ -436,7 +448,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # f_path = data_path / "kinetics_feet_deltaf.npy"
     # j_path = data_path / "all_joints_deltaf.npy"
 
-    f_path = data_path / "kinetics_feet.npy"
+    f_path = data_path / "kinetics_glob.npy"
     j_path = data_path / "all_joints.npy"
 
     if not f_path.exists():
@@ -462,6 +474,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
             window_size=128, stride=64, n_steps=n_steps, solver=solver, seed=s,
             body_weight_n=body_weight_n,
         )
+        j_preds = lowpass_prediction(j_preds)
         rmse_s, mae_s = per_joint_metrics(j_ref, j_preds)
         rmse_list.append(rmse_s); mae_list.append(mae_s)
         if s == 0:
@@ -472,9 +485,11 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     rmse_mean, rmse_std = rmse_arr.mean(0), rmse_arr.std(0)
     mae_mean, mae_std = mae_arr.mean(0), mae_arr.std(0)
 
-    # ===== SAVE PREDICTION CSV (graine 0, ta logique) =====
+    # ===== SAVE PREDICTION CSV (graine 0) =====
+    
+
     df_pred = pd.DataFrame(j_preds_seed0, columns=JOINT_NAMES)
-    csv_path = output_dir / f"{subject_name}_{trial_name}_{variant}_prediction.csv"
+    csv_path = output_dir / f"{subject_name}_{trial_name}_{variant}_prediction_filtered.csv"
     df_pred.to_csv(csv_path, index=False)
     print(f"  ✓ Prediction saved: {csv_path}")
 
@@ -490,7 +505,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         "rmse_mean": rmse_mean, "rmse_std": rmse_std,
         "mae_mean": mae_mean, "mae_std": mae_std,
     })
-    metrics_csv = output_dir / f"{subject_name}_{trial_name}_{variant}_metrics.csv"
+    metrics_csv = output_dir / f"{subject_name}_{trial_name}_{variant}_metrics_filtered.csv"
     df_metrics.to_csv(metrics_csv, index=False)
     print(f"  ✓ Per-joint metrics saved: {metrics_csv}")
 
@@ -513,7 +528,7 @@ if __name__ == "__main__":
     # DATA_ROOT = "DATA/synth_npy_all"
 
 
-    SUBJECT, TRIAL = "Jovana", "Trial111"
+    SUBJECT, TRIAL = "Subject1", "Trial111"
     DATA_ROOT = "processed_data_feet"
 
 
@@ -521,10 +536,10 @@ if __name__ == "__main__":
     # même solver + même n_steps -> même NFE : seul le modèle change
     res["baseline"] = run_inference(
         SUBJECT, TRIAL,
-        model_path="results_full_all_BW_feet/fm_biomech_model_best.pth",
-        scalers_path="results_full_all_BW_feet/scalers_concat.json",
+        model_path="results_real_global/fm_biomech_model_best.pth",
+        scalers_path="results_real_global/scalers_concat.json",
         variant="baseline", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="./results_full_all_BW_feet",
+        data_root=DATA_ROOT, output_dir="./results_real_global",
          normalize_by_body_weight=True
     )
     # res["improved"] = run_inference(

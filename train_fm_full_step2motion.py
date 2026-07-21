@@ -14,7 +14,7 @@ from utils.model_utils import build_human_model
 
 
 GRAVITY_M_S2 = 9.81
-SYNTH_URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/Vinc")
+SYNTH_URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf")
 URDF_MESHES_PATH = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf"
 
 
@@ -273,7 +273,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
 class DiffusionTransformer(nn.Module):
-    def __init__(self, embed_dim=256, nhead=8, num_layers=2):
+    def __init__(self, embed_dim=128, nhead=4, num_layers=2):
         super().__init__()
 
         # ==========================================
@@ -309,11 +309,11 @@ class DiffusionTransformer(nn.Module):
         layer = nn.TransformerDecoderLayer(
             d_model=embed_dim, 
             nhead=nhead, 
-            dim_feedforward=512,   
+            dim_feedforward=256,   
             activation="gelu",    
             batch_first=True, 
             norm_first=True, 
-            dropout=0.25
+            dropout=0.1
         )
         self.transformer = nn.TransformerDecoder(layer, num_layers=num_layers)
         
@@ -450,7 +450,7 @@ def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet")
 
-    results_dir = Path("results_real_global")
+    results_dir = Path("results_real_feet_archi")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -471,7 +471,7 @@ def run_experiment():
             if not is_squat_task_only(subject_name, task_name):
                 continue
 
-            kinetics_file = task_dir / "kinetics_glob.npy"
+            kinetics_file = task_dir / "kinetics_feet.npy"
             joints_file = task_dir / "all_joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():

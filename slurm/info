@@ -1,2 +1,8 @@
  chmod +x slurm/jz_to_laptop.sh 
  ./slurm/jz_to_laptop.sh 
+
+pour lancer les job avec pinocchio faut travailler dans cet env et lancer:
+module purge
+module load pytorch-gpu/py3/2.6.0
+export PYTHONUSERBASE=$WORK/.local_pytorch-2.6.0
+export PATH=$PYTHONUSERBASE/bin:$PATH
