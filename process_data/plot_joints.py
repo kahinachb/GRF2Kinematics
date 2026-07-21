@@ -1,10 +1,11 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Charger le fichier
-df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/generated_data/subject_01_squat_variant_860_dz-0.135_dx-0.025_dy+0.035_q.csv")
-
-
+# Charger les fichiers
+df_joints = pd.read_csv("DATA/Vinc/Jovana/Trial111/joints_filtered_.csv")
+df_kinetics = pd.read_csv("DATA/Vinc/Jovana/Trial111/kinetics_glob_filtered_.csv")
+df_kinetics= pd.read_csv("DATA/generated_103/subject_103_squat_variant_000_dz+0.125_dx-0.100_dy+0.065_grfm.csv")
+df_joints= pd.read_csv("DATA/generated_103/subject_103_squat_variant_000_dz+0.125_dx-0.100_dy+0.065_q.csv")
 # -------------------------
 # GROUPES
 # -------------------------
@@ -40,7 +41,7 @@ group3 = [
 # -------------------------
 
 def plot_group(columns, title):
-    data = df[columns]
+    data = df_joints[columns]
 
     n = len(columns)
     cols = 3
@@ -63,6 +64,41 @@ def plot_group(columns, title):
     plt.show()
 
 
+def plot_forces_moments():
+    """Trace les efforts de chaque côté (Vinc : plateforme 1 = droite, 2 = gauche)."""
+    sides = {
+        "Right": "1",
+        "Left": "2",
+    }
+    quantities = (
+        ("F", "x", "Force (N)"),
+        ("F", "y", "Force (N)"),
+        ("F", "z", "Force (N)"),
+        ("M", "x", "Moment (N.m)"),
+        ("M", "y", "Moment (N.m)"),
+        ("M", "z", "Moment (N.m)"),
+    )
+
+    fig, axes = plt.subplots(6, 2, figsize=(14, 16), sharex=True)
+
+    for col_idx, (side, plate) in enumerate(sides.items()):
+        for row_idx, (quantity, component, unit) in enumerate(quantities):
+            label = f"{quantity}{component}"
+            axes[row_idx, col_idx].plot(
+                df_kinetics[f"{label}{plate}_glob"],
+                color="tab:blue" if quantity == "F" else "tab:orange",
+            )
+            axes[row_idx, col_idx].set_title(f"{label} - {side}")
+            axes[row_idx, col_idx].set_ylabel(unit)
+            axes[row_idx, col_idx].grid(True, alpha=0.3)
+
+        axes[-1, col_idx].set_xlabel("Frame")
+
+    fig.suptitle("Ground reaction forces and moments")
+    fig.tight_layout()
+    plt.show()
+
+
 # -------------------------
 # PLOTS
 # -------------------------
@@ -78,3 +114,6 @@ mid = len(group3) // 2
 
 plot_group(group3[:mid], "Upper Body Joints ")
 plot_group(group3[mid:], "Upper Body Joints")
+
+# 4) Forces et moments : une colonne par côté
+plot_forces_moments()

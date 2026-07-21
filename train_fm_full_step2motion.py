@@ -9,12 +9,12 @@ import random
 import json
 import copy
 import pinocchio as pin
-
+from utils.utils import is_squat_task_only
 from utils.model_utils import build_human_model
 
 
 GRAVITY_M_S2 = 9.81
-SYNTH_URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf")
+SYNTH_URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/Vinc")
 URDF_MESHES_PATH = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf"
 
 
@@ -22,7 +22,7 @@ def body_weight_newtons(kinetics_path, cache, urdf_dir=SYNTH_URDF_DIR):
     """Return the simulated subject's body weight from its URDF mass."""
     subject = Path(kinetics_path).parent.parent.name
     if subject not in cache:
-        urdf_path = Path(urdf_dir) / f"human_{subject}.urdf"
+        urdf_path = Path(urdf_dir) / f"{subject}_scaled.urdf"
         if not urdf_path.exists():
             raise FileNotFoundError(f"URDF not found for {subject}: {urdf_path}")
         model_h = build_human_model(str(urdf_path), URDF_MESHES_PATH)[0]
@@ -287,7 +287,7 @@ class DiffusionTransformer(nn.Module):
         # ==========================================
         # 2. SENSOR PARTITIONING (Mémoire / Plateformes)
         # ==========================================
-        # Right: F(3), M(3), CoP(2) | Left: F(3), M(3), CoP(2) -> Total 17
+        # Right: F(3), M(3), CoP(2) | Left: F(3), M(3), CoP(3) -> Total 18
         self.embed_F_R = nn.Linear(3, embed_dim)
         self.embed_M_R = nn.Linear(3, embed_dim)
         self.embed_CoP_R = nn.Linear(3, embed_dim)
@@ -352,7 +352,7 @@ class DiffusionTransformer(nn.Module):
         # ==========================================
         # 3. MEMORY: Découpage des Forces (cond)
         # ==========================================
-        # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:8), L_F(9:12), L_M(12:15), L_CoP(15:17)
+        # Indexation: R_F(0:3), R_M(3:6), R_CoP(6:8), L_F(9:12), L_M(12:15), L_CoP(15:18)
         emb_FR = self.embed_F_R(cond[:, :, 0:3])
         emb_MR = self.embed_M_R(cond[:, :, 3:6])
         emb_CoPR = self.embed_CoP_R(cond[:, :, 6:9])
@@ -448,9 +448,9 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # ==========================================
 def run_experiment():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_all")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet")
 
-    results_dir = Path("results_full_all_BW")
+    results_dir = Path("results_real_global")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     all_samples = []
@@ -465,11 +465,14 @@ def run_experiment():
 
         for task_dir in task_dirs:
 
+            subject_name = subject_dir.name.lower()
             task_name = task_dir.name.lower()
 
+            if not is_squat_task_only(subject_name, task_name):
+                continue
 
-            kinetics_file = task_dir / "kinetics_deltaf.npy"
-            joints_file = task_dir / "all_joints_deltaf.npy"
+            kinetics_file = task_dir / "kinetics_glob.npy"
+            joints_file = task_dir / "all_joints.npy"
 
             if kinetics_file.exists() and joints_file.exists():
 

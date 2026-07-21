@@ -7,9 +7,43 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import pinocchio as pin
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+from utils.model_utils import build_human_model
+
+
+GRAVITY_M_S2 = 9.81
+URDF_MESHES_PATH = "DATA/10_urdf"
+
+
+def resolve_subject_urdf(subject_name, data_root):
+    """Resolve the URDF used to obtain mass for synthetic or Vinc subjects."""
+    if subject_name.startswith("subject_"):
+        path = Path("DATA/10_urdf") / f"human_{subject_name}.urdf"
+    else:
+        path = Path("DATA/urdf_scaled/Vinc") / f"{subject_name}_scaled.urdf"
+    if not path.exists():
+        raise FileNotFoundError(f"URDF not found for body-weight normalization: {path}")
+    return path
+
+
+def body_weight_newtons(urdf_path):
+    model_h = build_human_model(str(urdf_path), URDF_MESHES_PATH)[0]
+    mass_kg = float(pin.computeTotalMass(model_h))
+    if mass_kg <= 0:
+        raise ValueError(f"Invalid URDF mass: {mass_kg} kg ({urdf_path})")
+    return mass_kg * GRAVITY_M_S2, mass_kg
+
+
+def normalize_grfm_by_body_weight(grfm, body_weight_n):
+    """Normalize F and M of both feet by BW; leave COP coordinates in metres."""
+    normalized = np.asarray(grfm, dtype=np.float32).copy()
+    for offset in (0, 9):
+        normalized[:, offset:offset + 6] /= body_weight_n
+    return normalized
 
 
 # =====================================================================
@@ -218,7 +252,8 @@ def _v(model, x, t_scalar, f, time_mul):
 
 @torch.no_grad()
 def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
-                       window_size=128, stride=64, n_steps=20, solver="heun", seed=0):
+                       window_size=128, stride=64, n_steps=20, solver="heun", seed=0,
+                       body_weight_n=None):
     torch.manual_seed(seed)               # bruit reproductible (par graine)
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
@@ -226,6 +261,9 @@ def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
     #     [f_raw[:,-9:], f_raw[:, :9]],
     #     axis=1
     # ) 
+
+    if body_weight_n is not None:
+        f_raw = normalize_grfm_by_body_weight(f_raw, body_weight_n)
 
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
@@ -370,7 +408,8 @@ def make_plots(j_ref, j_preds, output_dir, subject_name):
 # =====================================================================
 def run_inference(subject_name, trial_name, model_path, scalers_path,
                   variant="improved", solver="heun", n_steps=20, n_seeds=1,
-                  data_root="./processed_data", output_dir="./inference_results"):
+                  data_root="./processed_data", output_dir="./inference_results",
+                  normalize_by_body_weight=False, urdf_path=None):
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -394,17 +433,23 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # ===== 3. DATA FILES (ta logique) =====
     print("[3/5] Locating data files...")
     data_path = Path(data_root) / subject_name / f"{trial_name}"
-    f_path = data_path / "kinetics_deltaf.npy"
-    j_path = data_path / "all_joints_deltaf.npy"
+    # f_path = data_path / "kinetics_feet_deltaf.npy"
+    # j_path = data_path / "all_joints_deltaf.npy"
 
-    # f_path = data_path / "kinetics_glob.npy"
-    # j_path = data_path / "all_joints.npy"
+    f_path = data_path / "kinetics_feet.npy"
+    j_path = data_path / "all_joints.npy"
 
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
     if not j_path.exists():
         raise FileNotFoundError(f"Joints file not found: {j_path}")
     print(f"  ✓ forces: {f_path}\n  ✓ joints: {j_path}")
+
+    body_weight_n = None
+    if normalize_by_body_weight:
+        subject_urdf = Path(urdf_path) if urdf_path else resolve_subject_urdf(subject_name, data_root)
+        body_weight_n, mass_kg = body_weight_newtons(subject_urdf)
+        print(f"  ✓ body-weight normalization: {mass_kg:.2f} kg ({body_weight_n:.2f} N)")
 
     # ===== 4. INFERENCE (multi-graines pour des métriques robustes) =====
     print("[4/5] Running inference...")
@@ -415,6 +460,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
         j_ref, j_preds = predict_full_trial(
             model, f_path, j_path, stats, device, time_mul,
             window_size=128, stride=64, n_steps=n_steps, solver=solver, seed=s,
+            body_weight_n=body_weight_n,
         )
         rmse_s, mae_s = per_joint_metrics(j_ref, j_preds)
         rmse_list.append(rmse_s); mae_list.append(mae_s)
@@ -463,30 +509,31 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 #  EXEMPLE D'APPEL — comparaison à budget ÉGAL (même solver, même n_steps)
 # =====================================================================
 if __name__ == "__main__":
-    SUBJECT, TRIAL = "subject_102", "variant_194_dz-0.200_dx-0.020_dy+0.012"
-    DATA_ROOT = "DATA/synth_npy_102"
+    # SUBJECT, TRIAL = "subject_01", "variant_724_dz-0.115_dx+0.042_dy+0.004"
+    # DATA_ROOT = "DATA/synth_npy_all"
 
 
-    # SUBJECT, TRIAL = "Jeremy", "Trial111"
-    # DATA_ROOT = "processed_data_feet"
+    SUBJECT, TRIAL = "Jovana", "Trial111"
+    DATA_ROOT = "processed_data_feet"
 
 
     res = {}
     # même solver + même n_steps -> même NFE : seul le modèle change
     res["baseline"] = run_inference(
         SUBJECT, TRIAL,
-        model_path="results_full_102/fm_biomech_model_best.pth",
-        scalers_path="results_full_102/scalers_concat.json",
+        model_path="results_full_all_BW_feet/fm_biomech_model_best.pth",
+        scalers_path="results_full_all_BW_feet/scalers_concat.json",
         variant="baseline", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="./results_full_102",
+        data_root=DATA_ROOT, output_dir="./results_full_all_BW_feet",
+         normalize_by_body_weight=True
     )
-    res["improved"] = run_inference(
-        SUBJECT, TRIAL,
-        model_path="results_full_102_improved/fm_biomech_model_best.pth",
-        scalers_path="results_full_102_improved/scalers_concat.json",
-        variant="improved", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="results_full_102_improved",
-    )
+    # res["improved"] = run_inference(
+    #     SUBJECT, TRIAL,
+    #     model_path="results_full_102_improved/fm_biomech_model_best.pth",
+    #     scalers_path="results_full_102_improved/scalers_concat.json",
+    #     variant="improved", solver="euler", n_steps=20, n_seeds=3,
+    #     data_root=DATA_ROOT, output_dir="results_full_102_improved",
+    # )
 
     print("\n================  RÉCAP  ================")
     for k, r in res.items():
