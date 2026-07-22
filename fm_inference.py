@@ -119,7 +119,7 @@ class SinusoidalTimeEmbeddings(nn.Module):
 #  2 couches en dur, embedding de temps non scalé)
 # =====================================================================
 class FlowTransformerBaseline(nn.Module):
-    def __init__(self, embed_dim=256, nhead=8):
+    def __init__(self, embed_dim=128, nhead=4):
         super().__init__()
         self.embed_Rleg = nn.Linear(6, embed_dim)
         self.embed_Lleg = nn.Linear(6, embed_dim)
@@ -138,8 +138,8 @@ class FlowTransformerBaseline(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model=embed_dim, max_len=2000)
 
         layer = nn.TransformerDecoderLayer(
-            d_model=embed_dim, nhead=nhead, dim_feedforward=512,
-            activation="gelu", batch_first=True, norm_first=True, dropout=0.25,
+            d_model=embed_dim, nhead=nhead, dim_feedforward=256,
+            activation="gelu", batch_first=True, norm_first=True, dropout=0.1,
         )
         self.transformer = nn.TransformerDecoder(layer, num_layers=2)  # 2 couches (comme à l'entraînement)
 
@@ -448,7 +448,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # f_path = data_path / "kinetics_feet_deltaf.npy"
     # j_path = data_path / "all_joints_deltaf.npy"
 
-    f_path = data_path / "kinetics_glob.npy"
+    f_path = data_path / "kinetics_feet.npy"
     j_path = data_path / "all_joints.npy"
 
     if not f_path.exists():
@@ -528,7 +528,7 @@ if __name__ == "__main__":
     # DATA_ROOT = "DATA/synth_npy_all"
 
 
-    SUBJECT, TRIAL = "Subject1", "Trial111"
+    SUBJECT, TRIAL = "Jeremy", "Trial111"
     DATA_ROOT = "processed_data_feet"
 
 
@@ -536,10 +536,10 @@ if __name__ == "__main__":
     # même solver + même n_steps -> même NFE : seul le modèle change
     res["baseline"] = run_inference(
         SUBJECT, TRIAL,
-        model_path="results_real_global/fm_biomech_model_best.pth",
-        scalers_path="results_real_global/scalers_concat.json",
+        model_path="results_real_feet_archi/fm_biomech_model_best.pth",
+        scalers_path="results_real_feet_archi/scalers_concat.json",
         variant="baseline", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="./results_real_global",
+        data_root=DATA_ROOT, output_dir="./results_real_feet_archi",
          normalize_by_body_weight=True
     )
     # res["improved"] = run_inference(
