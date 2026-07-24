@@ -20,7 +20,7 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 
 
-subject = 'subject15'
+subject = 'subject16'
 
 task = 'walk'
 which = 'Anais'

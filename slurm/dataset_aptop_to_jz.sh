@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source_path="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/10_urdf"
+source_path="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/processed_data_feet_anais_platefixed"
 target_path="ulm94jm@jean-zay3.idris.fr:/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine"
 
 # FIRST SYNC RIGHT AWAY

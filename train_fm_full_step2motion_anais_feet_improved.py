@@ -95,7 +95,7 @@ def configure_base_urdf(urdf_dir: Path) -> None:
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", default="luyo", help=f"One of: {', '.join(SUPPORTED_TASKS)} (default: luyo).")
-    parser.add_argument("--data-root", type=Path, default=base.DATA_ROOT)
+    parser.add_argument("--data-root", type=Path, default="/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_anais_platefixed")
     parser.add_argument("--urdf-dir", type=Path, default=base.URDF_DIR)
     parser.add_argument("--results-dir", type=Path, default=None)
     parser.add_argument("--epochs", type=int, default=base.EPOCHS)

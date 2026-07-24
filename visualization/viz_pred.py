@@ -18,15 +18,15 @@ import numpy as np
 import imageio.v2 as imageio
 
 
-subject = 'Jeremy'
+subject = 'subject04'
 
-task = 'Trial111'
-which = 'Vinc'
+task = 'luyo'
+which = 'Anais'
 fps = 100  #kinetics_glob_filtered are all 100hz
 dt = 1.0 / fps
 
-# path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
-path_grf ="DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_grfm.csv"
+path_grf = f"DATA/{which}/{subject}/{task}/kinetics_glob_filtered.csv"
+# path_grf ="DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_grfm.csv"
 
 grf_df = pd.read_csv(path_grf)
 fx1, fy1, fz1 = 'Fx1_glob', 'Fy1_glob', 'Fz1_glob'
@@ -39,11 +39,11 @@ mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-# path_joint_pred = f"results_full_step2motion_fm_improved_ff/Jeremy_Trial111_prediction_absolute.csv"
-# path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
+path_joint_pred = f"results_anais_luyo_feet_morphology/subject04_luyo_anais_luyo_feet_morphology_ema_heun_prediction_filtered.csv"
+path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
-path_joint = f"DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
-path_joint_pred= 'results_full_step2motion_fm_improved_ff/subject_11_variant_082_dz+0.006_dx+0.032_dy+0.013_prediction_absolute_euler.csv'
+# path_joint = f"DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
+# path_joint_pred= 'results_full_step2motion_fm_improved_ff/subject_11_variant_082_dz+0.006_dx+0.032_dy+0.013_prediction_absolute_euler.csv'
 
 q_ref_df_pred = pd.read_csv(path_joint_pred)
 
@@ -121,7 +121,7 @@ desired_order_ref = [
 #                         ]
 
 desired_order_pred = [
-   "FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
+   #"FF_X","FF_Y","FF_Z","FF_quatx","FF_quaty","FF_quatz","FF_quatw",
     "Lhip_flex_ext","Lhip_abd_add","Lhip_int_ext_rot",
     "Lknee_flex_ext",
     "Lankle_flex_ext","Lankle_abd_add",
@@ -258,9 +258,9 @@ nq = model_h_pred.nq
 q_pred_full = np.zeros((n_samples, nq))
 for i in range(n_samples):
 
-    # q_pred_full[i, :7] = q_ref[i][:7]             
-    # q_pred_full[i,7:] = q_ref_pred[i][:]
-    q_pred_full[i,:] = q_ref_pred[i][:]
+    q_pred_full[i, :7] = q_ref[i][:7]             
+    q_pred_full[i,7:] = q_ref_pred[i][:]
+    # q_pred_full[i,:] = q_ref_pred[i][:]
 
 nv = model_h_pred.nv
 n_samples = len(q_pred_full)
@@ -291,9 +291,9 @@ for i in range(len(q_ref)):
 
 
     q_pred_full = np.zeros_like(q_ref[i])
-    # q_pred_full[:7] = q_ref[i][:7]      # freeflyer
-    # q_pred_full[7:] = q_ref_pred[i][:]
-    q_pred_full[:] = q_ref_pred[i][:]
+    q_pred_full[:7] = q_ref[i][:7]      # freeflyer
+    q_pred_full[7:] = q_ref_pred[i][:]
+    # q_pred_full[:] = q_ref_pred[i][:]
 
     tau_ref = pin.rnea(model_h,data_h,q_ref[i],v_ref[i],a_ref[i]) #N et N.m 
     tau_ref_all.append(tau_ref)
@@ -347,7 +347,7 @@ M_world = np.array(M_world)
 
 import matplotlib.pyplot as plt
 t = np.arange(len(F_world))
-t = np.arange(4000)
+# t = np.arange(4000)
 fig, axs = plt.subplots(2, 3, figsize=(15, 7))
 
 labels = ["Fx", "Fy", "Fz", "Mx", "My", "Mz"]
@@ -359,9 +359,9 @@ data_FM = np.hstack([F_world, M_world])
 
 for j, ax in enumerate(axs.flatten()):
 
-    ax.plot(t, data_ref[:4000, j], label="Reference joint wrench")
-    ax.plot(t, data_pred[:4000, j], label="Predicted joint wrench")
-    ax.plot(t, data_FM[:4000, j], label="Force plate")
+    ax.plot(t, data_ref[:, j], label="Reference joint wrench")
+    ax.plot(t, data_pred[:, j], label="Predicted joint wrench")
+    ax.plot(t, data_FM[:, j], label="Force plate")
 
     ax.set_title(labels[j])
     ax.set_xlabel("Frame")
