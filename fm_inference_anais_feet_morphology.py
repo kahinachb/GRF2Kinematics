@@ -184,7 +184,7 @@ def parse_arguments():
     parser.add_argument("--model", type=Path, default=None, help="Override the checkpoint path.")
     parser.add_argument("--scalers", type=Path, default=None, help="Override the scaler JSON path.")
     parser.add_argument("--model-label", choices=("ema", "raw"), default="ema")
-    parser.add_argument("--data-root", type=Path, default=Path("processed_data_feet"))
+    parser.add_argument("--data-root", type=Path, default=Path("processed_data_feet_anais_platefixed"))
     parser.add_argument("--urdf-dir", type=Path, default=Path("DATA/10_urdf"))
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--solver", choices=("heun", "euler"), default="heun")

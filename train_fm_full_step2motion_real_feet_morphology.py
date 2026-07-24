@@ -25,7 +25,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader, Dataset
 
 import train_fm_full_step2motion_real_feet_improved as base
-from utils.utils import is_squat_task_only, manual_mapping
+# from utils.utils import is_squat_task_only, manual_mapping
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ from utils.utils import is_squat_task_only, manual_mapping
 # morphology conditioning.
 DATA_ROOT = base.DATA_ROOT
 URDF_DIR = base.URDF_DIR
-RESULTS_DIR = Path("results_real_feet_morphology")
+RESULTS_DIR = Path("results_realV_feet_morphology")
 
 WINDOW_SIZE = base.WINDOW_SIZE
 STRIDE = base.STRIDE
@@ -435,8 +435,8 @@ def run_experiment():
             continue
         for task_dir in sorted(path for path in subject_dir.iterdir() if path.is_dir()):
             task_name = task_dir.name
-            if not is_squat_task_only(subject_name, task_name):
-                continue
+            # if not is_squat_task_only(subject_name, task_name):
+            #     continue
             kinetics_path = task_dir / "kinetics_feet.npy"
             joints_path = task_dir / "all_joints.npy"
             if kinetics_path.exists() and joints_path.exists():

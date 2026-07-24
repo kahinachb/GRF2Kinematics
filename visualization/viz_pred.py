@@ -18,7 +18,7 @@ import numpy as np
 import imageio.v2 as imageio
 
 
-subject = 'subject04'
+subject = 'subject01'
 
 task = 'luyo'
 which = 'Anais'
@@ -39,7 +39,7 @@ mx2,my2,mz2 =  'Mx2_glob', 'My2_glob', 'Mz2_glob'
 urdf_path = f"DATA/urdf_scaled/{which}/{subject}_scaled.urdf"# Human base
 # urdf_path ='/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/rt-cosmik/urdf/human.urdf'
 
-path_joint_pred = f"results_anais_luyo_feet_morphology/subject04_luyo_anais_luyo_feet_morphology_ema_heun_prediction_filtered.csv"
+path_joint_pred = f"results_anais_luyo_feet_morphology250/subject01_luyo_anais_luyo_feet_morphology_ema_heun_prediction_filtered.csv"
 path_joint = f"DATA/{which}/{subject}/{task}/joints_filtered_FF.csv"
 
 # path_joint = f"DATA/generated_data/subject_11_squat_variant_082_dz+0.006_dx+0.032_dy+0.013_q.csv"
@@ -153,7 +153,7 @@ q_ref_df_pred = q_ref_df_pred[desired_order_pred]
 # Convertir en numpy si besoin
 q_ref = q_ref_df.to_numpy(dtype=float)
 q_ref_pred = q_ref_df_pred.to_numpy(dtype=float)
-q_ref_pred = lowpass_filter(q_ref_pred, cutoff=2, fs=100, order=4)
+# q_ref_pred = lowpass_filter(q_ref_pred, cutoff=2, fs=100, order=4)
 
 urdf_name = "human.urdf"
 urdf_meshes_path = "motif/model/human_urdf"

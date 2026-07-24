@@ -21,14 +21,14 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader, Dataset
 
 from utils.model_utils import build_human_model
-from utils.utils import is_squat_task_only
+# from utils.utils import is_squat_task_only
 
 
 # ---------------------------------------------------------------------------
 # Experiment configuration
 # ---------------------------------------------------------------------------
-DATA_ROOT = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet")
-RESULTS_DIR = Path("results_real_feet_improved")
+DATA_ROOT = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_Vinc")
+RESULTS_DIR = Path("results_realV_feet_improved")
 URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf")
 URDF_MESHES_PATH = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf"
 
@@ -458,8 +458,8 @@ def run_experiment():
         subject_name = subject_dir.name.lower()
         for task_dir in sorted(path for path in subject_dir.iterdir() if path.is_dir()):
             task_name = task_dir.name.lower()
-            if not is_squat_task_only(subject_name, task_name):
-                continue
+            # if not is_squat_task_only(subject_name, task_name):
+            #     continue
             kinetics_path = task_dir / "kinetics_feet.npy"
             joints_path = task_dir / "all_joints.npy"
             if kinetics_path.exists() and joints_path.exists():
