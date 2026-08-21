@@ -404,8 +404,8 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_npy_102")
-    results_dir = Path("res_fullff_weighted100")
+    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_christine")
+    results_dir = Path("results_ff_chrsitine")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     all_samples = []
@@ -423,7 +423,7 @@ def run_experiment():
             task_name = task_dir.name.lower()
 
 
-            kinetics_file = task_dir / "kinetics_deltaf.npy"
+            kinetics_file = task_dir / "kinetics_feet_deltaf.npy"
             joints_file = task_dir / "all_joints_deltaf.npy"
 
             if kinetics_file.exists() and joints_file.exists():

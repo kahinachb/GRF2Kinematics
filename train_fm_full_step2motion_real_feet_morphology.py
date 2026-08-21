@@ -67,7 +67,7 @@ MORPHOLOGY_FEATURE_NAMES = (
 )
 N_MORPHOLOGY_FEATURES = len(MORPHOLOGY_FEATURE_NAMES)
 # The experiment is intentionally restricted to the seven Vinc subjects.
-VINC_SUBJECTS = frozenset(manual_mapping)
+# VINC_SUBJECTS = frozenset(manual_mapping)
 
 
 def _joint_origins(urdf_path: Path) -> dict[str, np.ndarray]:
@@ -431,8 +431,8 @@ def run_experiment():
     morphology_cache = {}
     for subject_dir in sorted(path for path in Path(DATA_ROOT).iterdir() if path.is_dir()):
         subject_name = subject_dir.name
-        if subject_name.lower() not in VINC_SUBJECTS:
-            continue
+        # if subject_name.lower() not in VINC_SUBJECTS:
+        #     continue
         for task_dir in sorted(path for path in subject_dir.iterdir() if path.is_dir()):
             task_name = task_dir.name
             # if not is_squat_task_only(subject_name, task_name):

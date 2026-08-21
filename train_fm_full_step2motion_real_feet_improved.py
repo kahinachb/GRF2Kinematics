@@ -29,8 +29,8 @@ from utils.model_utils import build_human_model
 # ---------------------------------------------------------------------------
 DATA_ROOT = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/processed_data_feet_Vinc")
 RESULTS_DIR = Path("results_realV_feet_improved")
-URDF_DIR = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf")
-URDF_MESHES_PATH = "/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/10_urdf"
+URDF_DIR = Path("DATA/10_urdf")
+URDF_MESHES_PATH = "DATA/10_urdf"
 
 WINDOW_SIZE = 128
 STRIDE = 64

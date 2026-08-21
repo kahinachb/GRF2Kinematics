@@ -97,20 +97,23 @@ def process_folder_to_local_delta(input_folder, output_base, make_feet_kinetics=
                                   urdf_dir="DATA/10_urdf"):
     input_path = Path(input_folder)
     output_path = Path(output_base)
-    joint_files = glob.glob(str(input_path / "*q.csv"))
+    joint_files = glob.glob(str(input_path / "*q_doc.csv"))
     models = {}
     
     for j_file in joint_files:
-        trial_id = os.path.basename(j_file).replace("_q", "").replace(".csv", "")
+        trial_id = os.path.basename(j_file).replace("_q_doc", "").replace(".csv", "")
 
         parts = trial_id.split("_")
+        # print(parts)
 
-        subject_name = "_".join(parts[:2])   # subject_01
-
+        # subject_name = "_".join(parts[:2])   # subject_01
+        subject_name = parts[0]
+        # print(subject_name)
+        # input()
         variant_idx = parts.index("variant")
         task_name = "_".join(parts[variant_idx:])
         
-        k_file = input_path / f"{trial_id}_grfm.csv"
+        k_file = input_path / f"{trial_id}_grfm_doc.csv"
         print(k_file)
         if not k_file.exists(): continue
         
@@ -171,10 +174,11 @@ def process_folder_to_local_delta(input_folder, output_base, make_feet_kinetics=
             trial_dir.mkdir(parents=True, exist_ok=True)
             np.save(trial_dir / "kinetics_deltaf.npy", arr_k_sync)
             np.save(trial_dir / "all_joints_deltaf.npy", arr_j_final)
+            print(f" {trial_dir }/ all_joints_deltaf.npy")
 
             if make_feet_kinetics:
                 if subject_name not in models:
-                    urdf_path = Path(urdf_dir) / f"human_{subject_name}.urdf"
+                    urdf_path = Path(urdf_dir) / f"{subject_name}_scaled.urdf"
                     if not urdf_path.exists():
                         raise FileNotFoundError(f"URDF not found: {urdf_path}")
                     models[subject_name] = build_human_model(str(urdf_path), URDF_MESHES_PATH)[0]
@@ -190,9 +194,9 @@ def process_folder_to_local_delta(input_folder, output_base, make_feet_kinetics=
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/generated_data"
+    IN_FOLDER = "DATA/Christine_npy"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/synth_npy_all"
+    OUT_FOLDER = "DATA/synth_christine"
     
     process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER, make_feet_kinetics=True)
     print("\n--- Opération terminée ---")

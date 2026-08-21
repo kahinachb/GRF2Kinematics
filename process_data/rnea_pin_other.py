@@ -386,7 +386,7 @@ def process_subject_trial(subject, trial_num):
     # fig1.savefig(out1, dpi=150, bbox_inches='tight')
     # plt.close(fig1)
     # print(f"  Saved: {out1}")
-    plt.show()
+    # plt.show()
 
 
     n_dofs     = 12
@@ -479,27 +479,27 @@ def process_subject_trial(subject, trial_num):
     })
 
 
-    kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
-    kinetics_filtered_df.to_csv(kinetics_file, index=False)
-    print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
+    # kinetics_file = os.path.join(save_dir, "kinetics_glob_filtered.csv")
+    # kinetics_filtered_df.to_csv(kinetics_file, index=False)
+    # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file}")
 
     # kinetics_file_pelvis = os.path.join(save_dir, "kinetics_pelvis_filtered.csv")
     # kinetics_filtered_df_pelvis.to_csv(kinetics_file_pelvis, index=False)
     # print(f"  Saved filtered kinetics (PF1 + PF2): {kinetics_file_pelvis}")
 
     # # --- Sauvegarde joints filtrés ---
-    new_joint_names = [
-    "delta_x",
-    "delta_y",
-    "delta_z",
-    "delta_rx",
-    "delta_ry",
-    "delta_rz"
-    ] + joint_names[7:]
-    joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=new_joint_names)
-    joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
-    joints_filtered_df.to_csv(joints_file, index=False)
-    print(f"  Saved filtered joints: {joints_file}")
+    # new_joint_names = [
+    # "delta_x",
+    # "delta_y",
+    # "delta_z",
+    # "delta_rx",
+    # "delta_ry",
+    # "delta_rz"
+    # ] + joint_names[7:]
+    # joints_filtered_df = pd.DataFrame(q_ref[:cut], columns=new_joint_names)
+    # joints_file = os.path.join(save_dir, "joints_filtered_FF.csv")
+    # joints_filtered_df.to_csv(joints_file, index=False)
+    # print(f"  Saved filtered joints: {joints_file}")
 
 
 

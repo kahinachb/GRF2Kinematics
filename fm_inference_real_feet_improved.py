@@ -383,11 +383,11 @@ def run_inference(
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Inference for the improved real-feet Flow Matching model.")
     parser.add_argument("--subject", default="Christine")
-    parser.add_argument("--trial", default="Trial110")
-    parser.add_argument("--model", default="results_real_feet_improved/fm_biomech_model_best_raw.pth")
-    parser.add_argument("--scalers", default="results_real_feet_improved/scalers_concat.json")
+    parser.add_argument("--trial", default="Trial108")
+    parser.add_argument("--model", default="results_realV_feet_improved/fm_biomech_model_best_raw.pth")
+    parser.add_argument("--scalers", default="results_realV_feet_improved/scalers_concat.json")
     parser.add_argument("--data-root", default="processed_data_feet")
-    parser.add_argument("--output-dir", default="results_real_feet_improved")
+    parser.add_argument("--output-dir", default="results_realV_feet_improved")
     parser.add_argument(
         "--solver", choices=("heun", "euler"), default="heun",
         help="ODE solver. Heun is second order; Euler uses half as many network evaluations per step.",
