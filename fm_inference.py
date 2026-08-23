@@ -28,6 +28,17 @@ def lowpass_prediction(pred, fs=100.0, cutoff_hz=6.0, order=4):
 
 
 GRAVITY_M_S2 = 9.81
+
+# Mz droit et gauche dans la convention d'entree a 18 canaux. Ils sont mis
+# a zero apres normalisation, comme pendant le nouvel entrainement.
+MZ_INDICES = (5, 14)
+
+
+def neutralize_mz(f):
+    f[..., list(MZ_INDICES)] = 0.0
+    return f
+
+
 URDF_MESHES_PATH = "DATA/10_urdf"
 
 
@@ -269,16 +280,17 @@ def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
     torch.manual_seed(seed)               # bruit reproductible (par graine)
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    # f_raw = np.concatenate(
-    #     [f_raw[:,-9:], f_raw[:, :9]],
-    #     axis=1
-    # ) 
+    f_raw = np.concatenate(
+        [f_raw[:,-9:], f_raw[:, :9]],
+        axis=1
+    )
 
     if body_weight_n is not None:
         f_raw = normalize_grfm_by_body_weight(f_raw, body_weight_n)
 
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+    f_norm = neutralize_mz(f_norm)
 
     T = f_norm.shape[0]
     full_pred = torch.zeros((T, 29), device=device)
@@ -448,7 +460,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # f_path = data_path / "kinetics_feet_deltaf.npy"
     # j_path = data_path / "all_joints_deltaf.npy"
 
-    f_path = data_path / "kinetics_feet.npy"
+    f_path = data_path / "kinetics_glob.npy"
     j_path = data_path / "all_joints.npy"
 
     if not f_path.exists():
@@ -524,31 +536,31 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 #  EXEMPLE D'APPEL — comparaison à budget ÉGAL (même solver, même n_steps)
 # =====================================================================
 if __name__ == "__main__":
-    # SUBJECT, TRIAL = "subject_01", "variant_724_dz-0.115_dx+0.042_dy+0.004"
-    # DATA_ROOT = "DATA/synth_npy_all"
+    # SUBJECT, TRIAL = "Christine", "variant_000"
+    # DATA_ROOT = "DATA/synth_christine"
 
 
-    SUBJECT, TRIAL = "Jeremy", "Trial111"
+    SUBJECT, TRIAL = "Christine", "Trial110"
     DATA_ROOT = "processed_data_feet"
 
 
     res = {}
     # même solver + même n_steps -> même NFE : seul le modèle change
-    res["baseline"] = run_inference(
-        SUBJECT, TRIAL,
-        model_path="results_real_feet_archi/fm_biomech_model_best.pth",
-        scalers_path="results_real_feet_archi/scalers_concat.json",
-        variant="baseline", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="./results_real_feet_archi",
-         normalize_by_body_weight=True
-    )
-    # res["improved"] = run_inference(
+    # res["baseline"] = run_inference(
     #     SUBJECT, TRIAL,
-    #     model_path="results_full_102_improved/fm_biomech_model_best.pth",
-    #     scalers_path="results_full_102_improved/scalers_concat.json",
-    #     variant="improved", solver="euler", n_steps=20, n_seeds=3,
-    #     data_root=DATA_ROOT, output_dir="results_full_102_improved",
+    #     model_path="results_real_feet_archi/fm_biomech_model_best.pth",
+    #     scalers_path="results_real_feet_archi/scalers_concat.json",
+    #     variant="baseline", solver="euler", n_steps=20, n_seeds=3,
+    #     data_root=DATA_ROOT, output_dir="./results_real_feet_archi",
+    #      normalize_by_body_weight=True
     # )
+    res["improved"] = run_inference(
+        SUBJECT, TRIAL,
+        model_path="results_christine_no_mz/fm_biomech_model_best.pth",
+        scalers_path="results_christine_no_mz/scalers_concat.json",
+        variant="improved", solver="euler", n_steps=20, n_seeds=3,
+        data_root=DATA_ROOT, output_dir="results_christine_no_mz",
+    )
 
     print("\n================  RÉCAP  ================")
     for k, r in res.items():

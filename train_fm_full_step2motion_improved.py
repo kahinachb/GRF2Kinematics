@@ -11,6 +11,18 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
+# Mz du pied droit et du pied gauche dans
+# [F_R(3), M_R(3), CoP_R(3), F_L(3), M_L(3), CoP_L(3)].
+# Ils sont neutralises APRES normalisation afin que 0 corresponde a la
+# moyenne du train et que le modele ne puisse pas exploiter ces canaux.
+MZ_INDICES = (5, 14)
+
+
+def neutralize_mz(f):
+    f[..., list(MZ_INDICES)] = 0.0
+    return f
+
+
 
 def split_list(lst, train_ratio=0.7, val_ratio=0.15):
     n = len(lst)
@@ -178,6 +190,7 @@ class BiomechDiffusionDataset(Dataset):
         f, j = torch.from_numpy(f), torch.from_numpy(j)
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
+            f = neutralize_mz(f)
             j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
         return f, j
 
@@ -341,6 +354,7 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
+    f_norm = neutralize_mz(f_norm)
 
     T = f_norm.shape[0]
     full_pred = torch.zeros((T, 29), device=device)
@@ -395,7 +409,7 @@ def run_experiment():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_christine")
-    results_dir = Path("results_christine")
+    results_dir = Path("results_christine_no_mz")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------- DATA --------------------------------
@@ -414,7 +428,7 @@ def run_experiment():
             task_name = task_dir.name.lower()
 
 
-            kinetics_file = task_dir / "kinetics_feet_deltaf.npy"
+            kinetics_file = task_dir / "kinetics_deltaf.npy"
             joints_file = task_dir / "all_joints_deltaf.npy"
 
             if kinetics_file.exists() and joints_file.exists():

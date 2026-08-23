@@ -423,7 +423,7 @@ def run_experiment():
             task_name = task_dir.name.lower()
 
 
-            kinetics_file = task_dir / "kinetics_feet_deltaf.npy"
+            kinetics_file = task_dir / "kinetics_deltaf.npy"
             joints_file = task_dir / "all_joints_deltaf.npy"
 
             if kinetics_file.exists() and joints_file.exists():

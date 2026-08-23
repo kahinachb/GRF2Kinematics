@@ -20,14 +20,8 @@ from pinocchio import Quaternion
 import example_robot_data as robex
 from utils.utils import find_col
 
-kinetics="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/wrench_total_world_with_cop.csv"
-df_cop = pd.read_csv(kinetics)
-X = df_cop[find_col(df_cop, "COPx_glob")]
-Y = df_cop[find_col(df_cop, "COPy_glob")]
-Z = df_cop[find_col(df_cop, "COPz_glob")]
-cop = np.stack([X, Y, Z], axis=1)
 
-kinetics_both="/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/grfm_both_feet_with_cop.csv"
+kinetics_both="DATA/Christine_synthetic/Christine_Trial110_variant_000_grfm_doc.csv"
 _both = pd.read_csv(kinetics_both)
 X1 = _both[find_col(_both, "COPx1_glob")]
 Y1 = _both[find_col(_both, "COPy1_glob")]
@@ -39,8 +33,8 @@ Z2 = _both[find_col(_both, "COPz2_glob")]
 cop2 = np.stack([X2, Y2, Z2], axis=1)
 
 
-urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf/human_subject_10.urdf"# Human base
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/q.csv"
+urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/10_urdf/Christine_scaled.urdf"# Human base
+path_joint = "DATA/Christine_synthetic/Christine_Trial110_variant_000_q_doc.csv"
 q_ref_df = pd.read_csv(path_joint)
 q_ref = q_ref_df.to_numpy(dtype=float)
 urdf_name = "human.urdf"
@@ -98,9 +92,7 @@ R_corr = np.array([[1, 0,           0          ],
 
 
 for i in range(len(q_ref)):
-    print(cop[i])
 
-    safe_place(viewer, "cop_global", cop[i])
     safe_place(viewer, "cop1", cop1[i])
     safe_place(viewer, "cop2", cop2[i])
 

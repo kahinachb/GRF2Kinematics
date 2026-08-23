@@ -21,8 +21,8 @@ import example_robot_data as robex
 from utils.utils import find_col
 
 
-urdf_path = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/urdf_scaled/Vinc/Subject1_scaled.urdf"# Human base
-path_joint = "/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/manip_marie_q.csv"
+urdf_path = "DATA/urdf_scaled/Vinc/Christine_scaled.urdf"# Human base
+path_joint = "DATA/Vinc/Christine/Trial110/joints_filtered_FF.csv"
 q_ref_df = pd.read_csv(path_joint)
 q_ref = q_ref_df.to_numpy(dtype=float)
 urdf_name = "human.urdf"
@@ -33,7 +33,7 @@ print(model_h.gravity)
 
 data_h = model_h.createData()
 
-df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/augmented_markers_2.csv")
+df = pd.read_csv("/home/kchalabi/Documents/THESE/datasets_kinetics/GRF2Kinematics/DATA/Vinc/Christine/Trial110.csv")
 
 mks_dict, start_sample_dict = read_mks_data(df, start_sample=0, converter=1000.0)
 mks_names = start_sample_dict.keys()
@@ -80,11 +80,10 @@ for name in mks_names:
 
 for i in range(len(q_ref)):
 
-    for i, frame in enumerate(mks_dict):
+    # for i, frame in enumerate(mks_dict):
     
-        for name in mks_names:
-            pos = frame[name].reshape(3,)
-            place(viewer, name, pos)
+    #     for name in mks_names:
+    #         pos = frame[name].reshape(3,)
+    #         place(viewer, name, pos)
 
             viz_human.display(q_ref[i])
-            input()
