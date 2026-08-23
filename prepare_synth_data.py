@@ -194,9 +194,9 @@ def process_folder_to_local_delta(input_folder, output_base, make_feet_kinetics=
 
 if __name__ == "__main__":
     # Dossier où se trouvent tes fichiers en vrac
-    IN_FOLDER = "DATA/Christine_npy"
+    IN_FOLDER = "DATA/Christine_gen"
     # Dossier où tu veux créer tes dossiers de trials
-    OUT_FOLDER = "DATA/synth_christine"
+    OUT_FOLDER = "DATA/synth2_christine"
     
     process_folder_to_local_delta(IN_FOLDER, OUT_FOLDER, make_feet_kinetics=True)
     print("\n--- Opération terminée ---")

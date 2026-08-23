@@ -276,21 +276,23 @@ def _v(model, x, t_scalar, f, time_mul):
 @torch.no_grad()
 def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
                        window_size=128, stride=64, n_steps=20, solver="heun", seed=0,
-                       body_weight_n=None):
+                       body_weight_n=None, swap_feet_blocks=True, ignore_mz=True):
     torch.manual_seed(seed)               # bruit reproductible (par graine)
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
-    f_raw = np.concatenate(
-        [f_raw[:,-9:], f_raw[:, :9]],
-        axis=1
-    )
+    if swap_feet_blocks:
+        f_raw = np.concatenate(
+            [f_raw[:, -9:], f_raw[:, :9]],
+            axis=1,
+        )
 
     if body_weight_n is not None:
         f_raw = normalize_grfm_by_body_weight(f_raw, body_weight_n)
 
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
-    f_norm = neutralize_mz(f_norm)
+    if ignore_mz:
+        f_norm = neutralize_mz(f_norm)
 
     T = f_norm.shape[0]
     full_pred = torch.zeros((T, 29), device=device)
@@ -433,7 +435,9 @@ def make_plots(j_ref, j_preds, output_dir, subject_name):
 def run_inference(subject_name, trial_name, model_path, scalers_path,
                   variant="improved", solver="heun", n_steps=20, n_seeds=1,
                   data_root="./processed_data", output_dir="./inference_results",
-                  normalize_by_body_weight=False, urdf_path=None):
+                  normalize_by_body_weight=False, urdf_path=None,
+                  force_filename="kinetics_glob.npy", joints_filename="all_joints.npy",
+                  swap_feet_blocks=True, ignore_mz=True):
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -460,8 +464,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
     # f_path = data_path / "kinetics_feet_deltaf.npy"
     # j_path = data_path / "all_joints_deltaf.npy"
 
-    f_path = data_path / "kinetics_glob.npy"
-    j_path = data_path / "all_joints.npy"
+    f_path = data_path / force_filename
+    j_path = data_path / joints_filename
 
     if not f_path.exists():
         raise FileNotFoundError(f"Forces file not found: {f_path}")
@@ -485,6 +489,7 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
             model, f_path, j_path, stats, device, time_mul,
             window_size=128, stride=64, n_steps=n_steps, solver=solver, seed=s,
             body_weight_n=body_weight_n,
+            swap_feet_blocks=swap_feet_blocks, ignore_mz=ignore_mz,
         )
         j_preds = lowpass_prediction(j_preds)
         rmse_s, mae_s = per_joint_metrics(j_ref, j_preds)

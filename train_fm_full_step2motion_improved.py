@@ -1,3 +1,4 @@
+import argparse
 import math
 import json
 import random
@@ -11,8 +12,8 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
-# Mz du pied droit et du pied gauche dans
-# [F_R(3), M_R(3), CoP_R(3), F_L(3), M_L(3), CoP_L(3)].
+# Mz des deux blocs GRFM dans
+# [F_1(3), M_1(3), CoP_1(3), F_2(3), M_2(3), CoP_2(3)].
 # Ils sont neutralises APRES normalisation afin que 0 corresponde a la
 # moyenne du train et que le modele ne puisse pas exploiter ces canaux.
 MZ_INDICES = (5, 14)
@@ -173,7 +174,7 @@ def plot_joints(ref, pred, start, end, filename):
 # 1. DATASET
 # =====================================================================
 class BiomechDiffusionDataset(Dataset):
-    def __init__(self, file_list, window_size=128, stats=None):
+    def __init__(self, file_list, window_size=128, stats=None, ignore_mz=True):
         self.samples = []
         for f_path, j_path in file_list:
             f_data = np.load(f_path).astype(np.float32)
@@ -181,6 +182,7 @@ class BiomechDiffusionDataset(Dataset):
             for i in range(0, len(f_data) - window_size + 1, window_size // 2):
                 self.samples.append((f_data[i:i + window_size], j_data[i:i + window_size]))
         self.stats = stats
+        self.ignore_mz = ignore_mz
 
     def __len__(self):
         return len(self.samples)
@@ -190,7 +192,8 @@ class BiomechDiffusionDataset(Dataset):
         f, j = torch.from_numpy(f), torch.from_numpy(j)
         if self.stats:
             f = (f - self.stats['f_m']) / (self.stats['f_s'] + 1e-6)
-            f = neutralize_mz(f)
+            if self.ignore_mz:
+                f = neutralize_mz(f)
             j = (j - self.stats['j_m']) / (self.stats['j_s'] + 1e-6)
         return f, j
 
@@ -349,12 +352,14 @@ def sample_heun(model, f_cond, n_steps=20):
 # 4. INFÉRENCE COMPLÈTE — inpainting style RePaint adapté au Flow Matching
 # =====================================================================
 @torch.no_grad()
-def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, stride=64, n_steps=20):
+def predict_full_trial(model, f_path, j_path, stats, device, window_size=128,
+                       stride=64, n_steps=20, ignore_mz=True):
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
     j_raw = np.load(j_path).astype(np.float32)[:, 6:]
     f_norm = (torch.from_numpy(f_raw) - stats['f_m']) / (stats['f_s'] + 1e-6)
-    f_norm = neutralize_mz(f_norm)
+    if ignore_mz:
+        f_norm = neutralize_mz(f_norm)
 
     T = f_norm.shape[0]
     full_pred = torch.zeros((T, 29), device=device)
@@ -405,12 +410,16 @@ def predict_full_trial(model, f_path, j_path, stats, device, window_size=128, st
 # =====================================================================
 # 5. RUN EXPERIMENT
 # =====================================================================
-def run_experiment():
+def run_experiment(args):
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_christine")
-    results_dir = Path("results_christine_no_mz")
+    data_root = args.data_root
+    results_dir = args.results_dir or Path(
+        "results_christine_no_mz" if args.ignore_mz else "results_christine_with_mz"
+    )
     results_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Configuration Mz : {'neutralises' if args.ignore_mz else 'conserves'}")
+    print(f"Dossier de resultats : {results_dir}")
 
     # ----------------------------- DATA --------------------------------
     all_samples = []
@@ -462,9 +471,11 @@ def run_experiment():
     train_pairs = get_pairs(train_subjects)
     stats = compute_and_save_stats(train_pairs, results_dir / "scalers_concat.json")
 
-    train_loader = DataLoader(BiomechDiffusionDataset(train_pairs, stats=stats),
+    train_loader = DataLoader(BiomechDiffusionDataset(
+                                  train_pairs, stats=stats, ignore_mz=args.ignore_mz),
                               batch_size=64, shuffle=True, num_workers=8, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(BiomechDiffusionDataset(get_pairs(val_subjects), stats=stats),
+    val_loader = DataLoader(BiomechDiffusionDataset(
+                                get_pairs(val_subjects), stats=stats, ignore_mz=args.ignore_mz),
                             batch_size=64, shuffle=False, num_workers=8, pin_memory=True)
 
     # --------------------------- MODELE --------------------------------
@@ -563,7 +574,9 @@ def run_experiment():
     model.eval()
 
     # --- fenêtre ---
-    test_ds = BiomechDiffusionDataset(get_pairs(test_subjects), stats=stats)
+    test_ds = BiomechDiffusionDataset(
+        get_pairs(test_subjects), stats=stats, ignore_mz=args.ignore_mz
+    )
     f_in, j_ref = test_ds[random.randint(0, len(test_ds) - 1)]
     f_in = f_in.unsqueeze(0).to(device)
     curr_j = sample_heun(model, f_in, n_steps=20)
@@ -590,7 +603,10 @@ def run_experiment():
     print("\n[INF] Inférence sur un essai COMPLET...")
     random_trial = random.choice(get_pairs(test_subjects))
     print("random_trial for test", random_trial)
-    ref_full, pred_full = predict_full_trial(model, random_trial[0], random_trial[1], stats, device, n_steps=20)
+    ref_full, pred_full = predict_full_trial(
+        model, random_trial[0], random_trial[1], stats, device,
+        n_steps=20, ignore_mz=args.ignore_mz,
+    )
     plot_joints(ref_full, pred_full, 0, 12, results_dir / "fig1.png")
     plot_joints(ref_full, pred_full, 12, 29, results_dir / "fig2.png")
 
@@ -600,5 +616,24 @@ def run_experiment():
     print(f"\n[FINISH] Résultats sauvegardés dans {results_dir}")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Entrainement Flow Matching sur synth_christine."
+    )
+    parser.add_argument(
+        "--data-root", type=Path,
+        default=Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth2_christine"),
+    )
+    parser.add_argument(
+        "--results-dir", type=Path, default=None,
+        help="Par defaut: results_christine_no_mz ou results_christine2_with_mz.",
+    )
+    parser.add_argument(
+        "--ignore-mz", action=argparse.BooleanOptionalAction, default=False,
+        help="Neutralise Mz des deux GRFM apres normalisation (defaut: oui).",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    run_experiment()
+    run_experiment(parse_args())

@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=20:00:00
-#SBATCH --output=LOG/out/%j.out
-#SBATCH --error=LOG/err/%j.err
+#SBATCH --output=LOG/out_2/%j.out
+#SBATCH --error=LOG/err_2/%j.err
 #SBATCH --hint=nomultithread
 #SBATCH --exclusive
 
