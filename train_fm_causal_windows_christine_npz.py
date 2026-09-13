@@ -204,7 +204,8 @@ def main():
     files=sorted(args.data_root.glob("*.npz")); train,val,test=split_files(files,args.seed,.7,.15)
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     values=stats(train,"q"); rows=[]
-    print(f"device={device} train={len(train)} val={len(val)} test={len(test)} test_file={test[0].name}")
+    print(f"device={device} workers={args.workers} train={len(train)} val={len(val)} "
+          f"test={len(test)} test_file={test[0].name}")
     for window in args.windows:
         result=train_one(args,window,train,val,test[0],values,device)
         rows.append((window,window*.01,*result))
