@@ -622,7 +622,7 @@ def parse_args():
     )
     parser.add_argument(
         "--data-root", type=Path,
-        default=Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth2_christine"),
+        default=Path("/lustre/fsn1/projects/rech/vsi/ulm94jm/dataset_grf2kine/synth_christine_new"),
     )
     parser.add_argument(
         "--results-dir", type=Path, default=None,

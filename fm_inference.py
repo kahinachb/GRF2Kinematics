@@ -276,7 +276,7 @@ def _v(model, x, t_scalar, f, time_mul):
 @torch.no_grad()
 def predict_full_trial(model, f_path, j_path, stats, device, time_mul,
                        window_size=128, stride=64, n_steps=20, solver="heun", seed=0,
-                       body_weight_n=None, swap_feet_blocks=True, ignore_mz=True):
+                       body_weight_n=None, swap_feet_blocks=False, ignore_mz=False):
     torch.manual_seed(seed)               # bruit reproductible (par graine)
     model.eval()
     f_raw = np.load(f_path).astype(np.float32)
@@ -436,8 +436,8 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
                   variant="improved", solver="heun", n_steps=20, n_seeds=1,
                   data_root="./processed_data", output_dir="./inference_results",
                   normalize_by_body_weight=False, urdf_path=None,
-                  force_filename="kinetics_glob.npy", joints_filename="all_joints.npy",
-                  swap_feet_blocks=True, ignore_mz=True):
+                  force_filename="kinetics_deltaf.npy", joints_filename="all_joints_deltaf.npy",
+                  swap_feet_blocks=False, ignore_mz=False):
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -541,12 +541,12 @@ def run_inference(subject_name, trial_name, model_path, scalers_path,
 #  EXEMPLE D'APPEL — comparaison à budget ÉGAL (même solver, même n_steps)
 # =====================================================================
 if __name__ == "__main__":
-    # SUBJECT, TRIAL = "Christine", "variant_000"
-    # DATA_ROOT = "DATA/synth_christine"
+    SUBJECT, TRIAL = "Christine", "variant_000"
+    DATA_ROOT = "DATA/synth2_christine"
 
 
-    SUBJECT, TRIAL = "Christine", "Trial110"
-    DATA_ROOT = "processed_data_feet"
+    # SUBJECT, TRIAL = "Christine", "Trial110"
+    # DATA_ROOT = "processed_data_feet"
 
 
     res = {}
@@ -561,10 +561,10 @@ if __name__ == "__main__":
     # )
     res["improved"] = run_inference(
         SUBJECT, TRIAL,
-        model_path="results_christine_no_mz/fm_biomech_model_best.pth",
-        scalers_path="results_christine_no_mz/scalers_concat.json",
+        model_path="results_christine2_with_mz/fm_biomech_model_best.pth",
+        scalers_path="results_christine2_with_mz/scalers_concat.json",
         variant="improved", solver="euler", n_steps=20, n_seeds=3,
-        data_root=DATA_ROOT, output_dir="results_christine_no_mz",
+        data_root=DATA_ROOT, output_dir="results_christine2_with_mz",
     )
 
     print("\n================  RÉCAP  ================")

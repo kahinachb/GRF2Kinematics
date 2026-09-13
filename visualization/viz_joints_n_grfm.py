@@ -124,11 +124,11 @@ model_h, coll_h, vis_h, _ = build_human_model(urdf_path, urdf_meshes_path)
 print(model_h.nq)
 print(model_h.gravity)
 input()
-# human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
-# model_h = human.model
-# data_h = human.data
-# coll_h = human.collision_model
-# vis_h = human.visual_model
+human = robex.human.HumanLoader(height=1.70, weight=60, gender='male').robot
+model_h = human.model
+data_h = human.data
+coll_h = human.collision_model
+vis_h = human.visual_model
 
 # quat = pin.Quaternion(pin.rpy.rpyToMatrix(np.deg2rad(90), 0, 0)).coeffs()#set the human model uprigth
 
@@ -137,38 +137,39 @@ input()
 # all_joint_ids = set(range(1, model_h.njoints))
  
 
-# joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z",
-#                   "middle_lumbar_X" ,
-#     "middle_lumbar_Z",
-#     "left_clavicle_joint_X",
-#     "left_shoulder_Z"     ,
-#     "left_shoulder_X"     ,
-#     "left_shoulder_Y"     ,
-#     "left_elbow_Z"       ,
-#     "left_elbow_Y"        ,
-#     "middle_cervical_Z"   ,
-#     "middle_cervical_X"   ,
-#     "middle_cervical_Y"   ,
-#     "right_clavicle_joint_X",
-#     "right_shoulder_Z"    ,
-#     "right_shoulder_X"    ,
-#     "right_shoulder_Y"    ,
-#     "right_elbow_Z"     ,
-#     "right_elbow_Y"     ]
-# joint_ids_to_lock = []
-# for jn in joints_to_lock:
-#     if model_h.existJointName(jn):
-#         joint_ids_to_lock.append(model_h.getJointId(jn))
-#     else:
-#         print('Warning: joint ' + str(jn) + ' does not belong to the model!')
+joints_to_lock = ["middle_thoracic_X", "middle_thoracic_Y", "middle_thoracic_Z", "left_wrist_X", "left_wrist_Z", "right_wrist_X","right_wrist_Z",
+    #               "middle_lumbar_X" ,
+    # "middle_lumbar_Z",
+    # "left_clavicle_joint_X",
+    # "left_shoulder_Z"     ,
+    # "left_shoulder_X"     ,
+    # "left_shoulder_Y"     ,
+    # "left_elbow_Z"       ,
+    # "left_elbow_Y"        ,
+    # "middle_cervical_Z"   ,
+    # "middle_cervical_X"   ,
+    # "middle_cervical_Y"   ,
+    # "right_clavicle_joint_X",
+    # "right_shoulder_Z"    ,
+    # "right_shoulder_X"    ,
+    # "right_shoulder_Y"    ,
+    # "right_elbow_Z"     ,
+    # "right_elbow_Y"    
+     ]
+joint_ids_to_lock = []
+for jn in joints_to_lock:
+    if model_h.existJointName(jn):
+        joint_ids_to_lock.append(model_h.getJointId(jn))
+    else:
+        print('Warning: joint ' + str(jn) + ' does not belong to the model!')
 
-# q0 = pin.neutral(model_h)
-# # Build reduced model
-# model_h, vis_h = pin.buildReducedModel(
-#     model_h, vis_h, joint_ids_to_lock, q0)
+q0 = pin.neutral(model_h)
+# Build reduced model
+model_h, vis_h = pin.buildReducedModel(
+    model_h, vis_h, joint_ids_to_lock, q0)
 
-# print(model_h.nq)
-# data_h = pin.Data(model_h)
+print(model_h.nq)
+data_h = pin.Data(model_h)
 ###############################################################################################################
 
 

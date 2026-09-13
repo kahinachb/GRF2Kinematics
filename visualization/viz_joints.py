@@ -12,10 +12,9 @@ import meshcat_shapes
 from pinocchio.visualize import MeshcatVisualizer
 import pandas as pd
 from utils.utils import read_mks_data, find_col, to_m
-from utils.linear_algebra_utils import lowpass_filter
 import pinocchio as pin
 import numpy as np
-from utils.viz_utils import add_sphere, place,set_tf, safe_place
+from utils.viz_utils import add_sphere
 from pinocchio import Quaternion
 import example_robot_data as robex
 from utils.utils import find_col
