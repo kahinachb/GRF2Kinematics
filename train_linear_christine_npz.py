@@ -54,6 +54,14 @@ TARGET_UNITS = {"q": "deg", "dq": "deg/s", "ddq": "deg/s2"}
 NPZ_TO_CANONICAL = np.r_[23:29, 0:6, 6:23]
 
 
+def discover_variant_files(root):
+    """Supporte l'ancien format plat et le format reference.npz + variants/."""
+    nested = sorted((root / "variants").glob("*.npz"))
+    if nested:
+        return nested
+    return [path for path in sorted(root.glob("*.npz")) if path.name != "reference.npz"]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=Path("DATA/Christine_synthetic"))
@@ -77,17 +85,28 @@ def target_29(array, target):
 
 
 def load_pair(path, target, reference=False):
-    with np.load(path) as data:
-        input_keys = REFERENCE_INPUT_KEYS if reference else INPUT_KEYS
-        missing = [key for key in input_keys if key not in data]
-        target_key = f"reference_{target}" if reference else target
-        if target_key not in data:
-            missing.append(target_key)
-        if missing:
-            raise KeyError(f"Champs manquants dans {path}: {missing}")
-        x = np.concatenate([np.asarray(data[key], dtype=np.float64)
-                            for key in input_keys], axis=1)
-        y = target_29(np.asarray(data[target_key]), target)
+    path = Path(path)
+    reference_path = path.parent.parent / "reference.npz"
+    # Nouveau format: la reference est centralisee hors des variantes.
+    if reference and reference_path.is_file():
+        with np.load(reference_path) as data:
+            left = np.asarray(data["measured_grfm_left_world"], dtype=np.float64)
+            right = np.asarray(data["measured_grfm_right_world"], dtype=np.float64)
+            x = np.concatenate([left[:, :3], left[:, 3:6],
+                                right[:, :3], right[:, 3:6]], axis=1)
+            y = target_29(np.asarray(data[f"reference_{target}"]), target)
+    else:
+        with np.load(path) as data:
+            input_keys = REFERENCE_INPUT_KEYS if reference else INPUT_KEYS
+            missing = [key for key in input_keys if key not in data]
+            target_key = f"reference_{target}" if reference else target
+            if target_key not in data:
+                missing.append(target_key)
+            if missing:
+                raise KeyError(f"Champs manquants dans {path}: {missing}")
+            x = np.concatenate([np.asarray(data[key], dtype=np.float64)
+                                for key in input_keys], axis=1)
+            y = target_29(np.asarray(data[target_key]), target)
     if x.shape != (len(x), 12) or len(x) != len(y):
         raise ValueError(f"Dimensions invalides dans {path}: X={x.shape}, Y={y.shape}")
     if not np.isfinite(x).all() or not np.isfinite(y).all():
@@ -197,7 +216,7 @@ def plot_metric_comparison(path, synth, real, unit):
 
 def main():
     args = parse_args()
-    files = sorted(args.data_root.glob("*.npz"))
+    files = discover_variant_files(args.data_root)
     if not files:
         raise FileNotFoundError(f"Aucun NPZ dans {args.data_root}")
     train, val, test = split_files(files, args.seed, args.train_ratio, args.val_ratio)

@@ -12,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from train_linear_christine_npz import (
     JOINT_NAMES, load_pair, split_files, stats, correlation_columns,
+    discover_variant_files,
 )
 
 MZ_INDICES = (5, 11)
@@ -201,7 +202,7 @@ def parse_args():
 
 def main():
     args=parse_args(); seed_all(args.seed); args.output_dir.mkdir(parents=True,exist_ok=True)
-    files=sorted(args.data_root.glob("*.npz")); train,val,test=split_files(files,args.seed,.7,.15)
+    files=discover_variant_files(args.data_root); train,val,test=split_files(files,args.seed,.7,.15)
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     values=stats(train,"q"); rows=[]
     print(f"device={device} workers={args.workers} train={len(train)} val={len(val)} "

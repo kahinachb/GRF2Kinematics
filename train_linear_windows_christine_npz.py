@@ -16,7 +16,7 @@ from sklearn.linear_model import Ridge
 
 from train_linear_christine_npz import (
     INPUT_KEYS, REFERENCE_INPUT_KEYS, JOINT_NAMES, load_pair, split_files,
-    stats, correlation_columns,
+    stats, correlation_columns, discover_variant_files,
 )
 
 
@@ -145,7 +145,7 @@ def main():
     windows = sorted(set(args.windows))
     if not windows or windows[0] < 1:
         raise ValueError("Toutes les fenetres doivent etre >= 1.")
-    files = sorted(args.data_root.glob("*.npz"))
+    files = discover_variant_files(args.data_root)
     train, val, test = split_files(files, args.seed, args.train_ratio, args.val_ratio)
     if not train or not test:
         raise ValueError("Le split doit contenir des fichiers train et test.")
